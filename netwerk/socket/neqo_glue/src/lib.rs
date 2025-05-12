@@ -26,7 +26,7 @@ use firefox_on_glean::{
 #[cfg(not(windows))]
 use libc::{c_int, AF_INET, AF_INET6};
 use neqo_common::{
-    event::Provider as _, qdebug, qerror, qlog::NeqoQlog, qwarn, Datagram, Decoder, Encoder,
+    event::Provider as _, qdebug, qerror, qlog::NeqoQlog, qwarn, Datagram, DatagramTrain, Decoder, Encoder,
     Header, IpTos, Role,
 };
 use neqo_crypto::{init, PRErrorCode};
@@ -36,7 +36,7 @@ use neqo_http3::{
 };
 use neqo_transport::{
     stream_id::StreamType, CongestionControlAlgorithm, Connection, ConnectionParameters,
-    Error as TransportError, Output, RandomConnectionIdGenerator, StreamId, Version,
+    Error as TransportError, Output, OutputTrain, RandomConnectionIdGenerator, StreamId, Version,
 };
 use nserror::{
     nsresult, NS_BASE_STREAM_WOULD_BLOCK, NS_ERROR_CONNECTION_REFUSED, NS_ERROR_FAILURE,
@@ -110,7 +110,7 @@ pub struct NeqoHttp3Conn {
     socket: Option<neqo_udp::Socket<BorrowedSocket>>,
     /// Buffered outbound datagram from previous send that failed with
     /// WouldBlock. To be sent once UDP socket has write-availability again.
-    buffered_outbound_datagram: Option<Datagram>,
+    buffered_outbound_datagram: Option<DatagramTrain>,
 
     datagram_segment_size_sent: LocalMemoryDistribution<'static>,
     datagram_segment_size_received: LocalMemoryDistribution<'static>,
@@ -843,16 +843,16 @@ pub extern "C" fn neqo_http3conn_process_output_and_send(
         let output = conn
             .buffered_outbound_datagram
             .take()
-            .map(Output::Datagram)
-            .unwrap_or_else(|| conn.conn.process_output(Instant::now()));
+            .map(OutputTrain::Datagram)
+            .unwrap_or_else(|| conn.conn.process_output_train(Instant::now(), conn.socket.as_mut().expect("non NSPR IO").max_gso_segments()));
         match output {
-            Output::Datagram(mut dg) => {
+            OutputTrain::Datagram(mut dg) => {
                 if !static_prefs::pref!("network.http.http3.ecn_mark") {
-                    dg.set_tos(IpTos::default());
+                    dg.tos = IpTos::default();
                 }
 
                 if static_prefs::pref!("network.http.http3.block_loopback_ipv6_addr")
-                    && matches!(dg.destination(), SocketAddr::V6(addr) if addr.ip().is_loopback())
+                    && matches!(dg.dst, SocketAddr::V6(addr) if addr.ip().is_loopback())
                 {
                     qdebug!("network.http.http3.block_loopback_ipv6_addr is set, returning NS_ERROR_CONNECTION_REFUSED for localhost IPv6");
                     return ProcessOutputAndSendResult {
@@ -861,7 +861,7 @@ pub extern "C" fn neqo_http3conn_process_output_and_send(
                     };
                 }
 
-                match conn.socket.as_mut().expect("non NSPR IO").send(&dg) {
+                match conn.socket.as_mut().expect("non NSPR IO").send2(&dg) {
                     Ok(()) => {}
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                         conn.increment_would_block_tx();
@@ -888,10 +888,10 @@ pub extern "C" fn neqo_http3conn_process_output_and_send(
                         };
                     }
                 }
-                bytes_written += dg.len();
-                conn.datagram_segment_size_sent.accumulate(dg.len() as u64);
+                bytes_written += dg.d.len();
+                conn.datagram_segment_size_sent.accumulate(dg.d.len() as u64);
             }
-            Output::Callback(to) => {
+            OutputTrain::Callback(to) => {
                 let timeout = if to.is_zero() {
                     Duration::from_millis(1)
                 } else {
@@ -906,7 +906,7 @@ pub extern "C" fn neqo_http3conn_process_output_and_send(
                 set_timer_func(context, timeout);
                 break;
             }
-            Output::None => {
+            OutputTrain::None => {
                 set_timer_func(context, u64::MAX);
                 break;
             }

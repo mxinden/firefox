@@ -273,3 +273,12 @@ viaduct = { git = "https://github.com/mozilla/application-services", rev = "40ae
 webext-storage = { git = "https://github.com/mozilla/application-services", rev = "40ae79e2825fa242a349e17fcfc84fb99fd92197" }
 
 allocator-api2 = { path = "third_party/rust/allocator-api2" }
+
+[patch."https://github.com/mozilla/neqo"]
+neqo-bin = { git = "https://github.com/mxinden/neqo.git", branch = "gso-v3" }
+neqo-common = { git = "https://github.com/mxinden/neqo.git", branch = "gso-v3" }
+neqo-crypto = { git = "https://github.com/mxinden/neqo.git", branch = "gso-v3" }
+neqo-http3 = { git = "https://github.com/mxinden/neqo.git", branch = "gso-v3" }
+neqo-qpack = { git = "https://github.com/mxinden/neqo.git", branch = "gso-v3" }
+neqo-transport = { git = "https://github.com/mxinden/neqo.git", branch = "gso-v3" }
+neqo-udp = { git = "https://github.com/mxinden/neqo.git", branch = "gso-v3" }

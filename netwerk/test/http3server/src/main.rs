@@ -14,7 +14,7 @@ use neqo_http3::{
 };
 use neqo_transport::server::ConnectionRef;
 use neqo_transport::{
-    ConnectionEvent, ConnectionParameters, Output, RandomConnectionIdGenerator, StreamType,
+    ConnectionEvent, ConnectionParameters, Output,OutputTrain, RandomConnectionIdGenerator, StreamType,
 };
 use std::env;
 
@@ -170,8 +170,8 @@ impl Http3TestServer {
 }
 
 impl HttpServer for Http3TestServer {
-    fn process(&mut self, dgram: Option<Datagram<&mut [u8]>>, now: Instant) -> Output {
-        let output = self.server.process(dgram, now);
+    fn process(&mut self, dgram: Option<Datagram<&mut [u8]>>, now: Instant, max_datagrams: usize) -> OutputTrain {
+        let output = self.server.process_train(dgram, now, max_datagrams);
 
         let output = if self.sessions_to_close.is_empty() {
             output
@@ -181,9 +181,9 @@ impl HttpServer for Http3TestServer {
             const MIN_INTERVAL: Duration = Duration::from_millis(100);
 
             match output {
-                Output::None => Output::Callback(MIN_INTERVAL),
-                o @ Output::Datagram(_) => o,
-                Output::Callback(d) => Output::Callback(min(d, MIN_INTERVAL)),
+                OutputTrain::None => OutputTrain::Callback(MIN_INTERVAL),
+                o @ OutputTrain::Datagram(_) => o,
+                OutputTrain::Callback(d) => OutputTrain::Callback(min(d, MIN_INTERVAL)),
             }
         };
 
@@ -662,8 +662,8 @@ impl ::std::fmt::Display for Server {
 }
 
 impl HttpServer for Server {
-    fn process(&mut self, dgram: Option<Datagram<&mut [u8]>>, now: Instant) -> Output {
-        self.0.process(dgram, now)
+    fn process(&mut self, dgram: Option<Datagram<&mut [u8]>>, now: Instant, max_datagrams: usize) -> OutputTrain {
+        self.0.process_train(dgram, now, max_datagrams)
     }
 
     fn process_events(&mut self, _now: Instant) {
@@ -898,8 +898,8 @@ impl Http3ProxyServer {
 }
 
 impl HttpServer for Http3ProxyServer {
-    fn process(&mut self, dgram: Option<Datagram<&mut [u8]>>, now: Instant) -> Output {
-        let output = self.server.process(dgram, now);
+    fn process(&mut self, dgram: Option<Datagram<&mut [u8]>>, now: Instant, max_datagrams: usize) -> OutputTrain {
+        let output = self.server.process_train(dgram, now, max_datagrams);
 
         #[cfg(not(target_os = "android"))]
         let output = if self.response_to_send.is_empty() {
@@ -910,9 +910,9 @@ impl HttpServer for Http3ProxyServer {
             const MIN_INTERVAL: Duration = Duration::from_millis(100);
 
             match output {
-                Output::None => Output::Callback(MIN_INTERVAL),
-                o @ Output::Datagram(_) => o,
-                Output::Callback(d) => Output::Callback(min(d, MIN_INTERVAL)),
+                OutputTrain::None => OutputTrain::Callback(MIN_INTERVAL),
+                o @ OutputTrain::Datagram(_) => o,
+                OutputTrain::Callback(d) => OutputTrain::Callback(min(d, MIN_INTERVAL)),
             }
         };
 
@@ -1027,8 +1027,8 @@ impl ::std::fmt::Display for NonRespondingServer {
 }
 
 impl HttpServer for NonRespondingServer {
-    fn process(&mut self, _dgram: Option<Datagram<&mut [u8]>>, _now: Instant) -> Output {
-        Output::None
+    fn process(&mut self, _dgram: Option<Datagram<&mut [u8]>>, _now: Instant, _max_datagrams: usize) -> OutputTrain {
+        OutputTrain::None
     }
 
     fn process_events(&mut self, _now: Instant) {}
