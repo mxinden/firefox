@@ -8,6 +8,8 @@ use std::fmt::Debug;
 
 use crate::hex_with_len;
 
+pub const MAX_VARINT: u64 = (1 << 62) - 1;
+
 /// Decoder is a view into a byte array that has a read offset.  Use it for parsing.
 pub struct Decoder<'a> {
     buf: &'a [u8],
@@ -113,7 +115,7 @@ impl<'a> Decoder<'a> {
     /// Signed types will fail if the high bit is set.
     pub fn decode_uint<T: TryFrom<u64>>(&mut self) -> Option<T> {
         let v = self.decode_n(size_of::<T>());
-        v.and_then(|v| T::try_from(v).ok())
+        T::try_from(v?).ok()
     }
 
     /// Decodes a QUIC varint.

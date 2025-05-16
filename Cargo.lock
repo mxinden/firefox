@@ -4651,7 +4651,7 @@ dependencies = [
  "rustc-hash 1.999.999",
  "serde",
  "spirv",
- "strum 0.27.1",
+ "strum",
  "thiserror 2.0.9",
  "unicode-ident",
 ]
@@ -4659,7 +4659,7 @@ dependencies = [
 [[package]]
 name = "neqo-bin"
 version = "0.13.2"
-source = "git+https://github.com/mozilla/neqo?tag=v0.13.2#847a5989f20d30eb3675d1435180fd48a8c6a3ad"
+source = "git+https://github.com/mxinden/neqo.git?branch=revert-recvmsg-x#2405b56a7913f95b25a741cb4c2da245363518ec"
 dependencies = [
  "clap",
  "clap-verbosity-flag",
@@ -4681,20 +4681,20 @@ dependencies = [
 [[package]]
 name = "neqo-common"
 version = "0.13.2"
-source = "git+https://github.com/mozilla/neqo?tag=v0.13.2#847a5989f20d30eb3675d1435180fd48a8c6a3ad"
+source = "git+https://github.com/mxinden/neqo.git?branch=revert-recvmsg-x#2405b56a7913f95b25a741cb4c2da245363518ec"
 dependencies = [
  "enum-map",
  "env_logger",
  "log",
  "qlog",
- "strum 0.26.999",
+ "strum",
  "windows",
 ]
 
 [[package]]
 name = "neqo-crypto"
 version = "0.13.2"
-source = "git+https://github.com/mozilla/neqo?tag=v0.13.2#847a5989f20d30eb3675d1435180fd48a8c6a3ad"
+source = "git+https://github.com/mxinden/neqo.git?branch=revert-recvmsg-x#2405b56a7913f95b25a741cb4c2da245363518ec"
 dependencies = [
  "bindgen 0.69.4",
  "enum-map",
@@ -4704,14 +4704,14 @@ dependencies = [
  "semver",
  "serde",
  "serde_derive",
- "strum 0.26.999",
+ "strum",
  "toml",
 ]
 
 [[package]]
 name = "neqo-http3"
 version = "0.13.2"
-source = "git+https://github.com/mozilla/neqo?tag=v0.13.2#847a5989f20d30eb3675d1435180fd48a8c6a3ad"
+source = "git+https://github.com/mxinden/neqo.git?branch=revert-recvmsg-x#2405b56a7913f95b25a741cb4c2da245363518ec"
 dependencies = [
  "enumset",
  "log",
@@ -4721,14 +4721,14 @@ dependencies = [
  "neqo-transport",
  "qlog",
  "sfv",
- "strum 0.26.999",
+ "strum",
  "url",
 ]
 
 [[package]]
 name = "neqo-qpack"
 version = "0.13.2"
-source = "git+https://github.com/mozilla/neqo?tag=v0.13.2#847a5989f20d30eb3675d1435180fd48a8c6a3ad"
+source = "git+https://github.com/mxinden/neqo.git?branch=revert-recvmsg-x#2405b56a7913f95b25a741cb4c2da245363518ec"
 dependencies = [
  "log",
  "neqo-common",
@@ -4740,7 +4740,7 @@ dependencies = [
 [[package]]
 name = "neqo-transport"
 version = "0.13.2"
-source = "git+https://github.com/mozilla/neqo?tag=v0.13.2#847a5989f20d30eb3675d1435180fd48a8c6a3ad"
+source = "git+https://github.com/mxinden/neqo.git?branch=revert-recvmsg-x#2405b56a7913f95b25a741cb4c2da245363518ec"
 dependencies = [
  "enum-map",
  "enumset",
@@ -4752,13 +4752,13 @@ dependencies = [
  "qlog",
  "smallvec",
  "static_assertions",
- "strum 0.26.999",
+ "strum",
 ]
 
 [[package]]
 name = "neqo-udp"
 version = "0.13.2"
-source = "git+https://github.com/mozilla/neqo?tag=v0.13.2#847a5989f20d30eb3675d1435180fd48a8c6a3ad"
+source = "git+https://github.com/mxinden/neqo.git?branch=revert-recvmsg-x#2405b56a7913f95b25a741cb4c2da245363518ec"
 dependencies = [
  "cfg_aliases",
  "log",
@@ -6281,13 +6281,6 @@ name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
-
-[[package]]
-name = "strum"
-version = "0.26.999"
-dependencies = [
- "strum 0.27.1",
-]
 
 [[package]]
 name = "strum"
@@ -8102,3 +8095,7 @@ name = "zlib-rs"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b20717f0917c908dc63de2e44e97f1e6b126ca58d0e391cee86d504eb8fbd05"
+
+[[patch.unused]]
+name = "strum"
+version = "0.26.999"
