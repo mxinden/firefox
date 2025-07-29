@@ -32,8 +32,7 @@ use neqo_common::{
 };
 use neqo_crypto::{agent::CertificateCompressor, init, PRErrorCode};
 use neqo_http3::{
-    features::extended_connect::SessionCloseReason, Error as Http3Error, Http3Client,
-    Http3ClientEvent, Http3Parameters, Http3State, Priority, WebTransportEvent,
+    features::extended_connect::SessionCloseReason, ConnectUdpEvent, Error as Http3Error, Http3Client, Http3ClientEvent, Http3Parameters, Http3State, Priority, WebTransportEvent
 };
 use neqo_transport::{
     stream_id::StreamType, CongestionControlAlgorithm, Connection, ConnectionParameters,
@@ -371,7 +370,9 @@ impl NeqoHttp3Conn {
             // Disabled on OpenBSD. See <https://bugzilla.mozilla.org/show_bug.cgi?id=1952304>.
             .pmtud_iface_mtu(cfg!(not(target_os = "openbsd")))
             // MLKEM support is configured further below. By default, disable it.
-            .mlkem(false);
+            .mlkem(false)
+            // TODO: parametrize this?
+            .datagram_size(1500);
 
         // Set a short timeout when fuzzing.
         #[cfg(feature = "fuzzing")]
@@ -390,7 +391,11 @@ impl NeqoHttp3Conn {
             .max_concurrent_push_streams(0)
             .connection_parameters(params)
             .webtransport(webtransport)
-            .http3_datagram(webtransport);
+            .http3_datagram(webtransport)
+            // TODO: parametrize this?
+            .connect(true)
+            // TODO: parametrize this?
+            .http3_datagram(true);
 
         let Ok(mut conn) = Connection::new_client(
             origin_conv,
@@ -1483,6 +1488,18 @@ pub enum WebTransportEventExternal {
         session_id: u64,
     },
 }
+#[repr(C)]
+pub enum ConnectUdpEventExternal {
+    Negotiated(bool),
+    Session(u64),
+    SessionClosed {
+        stream_id: u64,
+        reason: SessionCloseReasonExternal,
+    },
+    Datagram {
+        session_id: u64,
+    },
+}
 
 impl WebTransportEventExternal {
     fn new(event: WebTransportEvent, data: &mut ThinVec<u8>) -> Self {
@@ -1519,6 +1536,44 @@ impl WebTransportEventExternal {
                 session_id: session_id.as_u64(),
             },
             WebTransportEvent::Datagram {
+                session_id,
+                datagram,
+            } => {
+                data.extend_from_slice(datagram.as_ref());
+                Self::Datagram {
+                    session_id: session_id.as_u64(),
+                }
+            }
+        }
+    }
+}
+impl ConnectUdpEventExternal {
+    fn new(event: ConnectUdpEvent, data: &mut ThinVec<u8>) -> Self {
+        match event {
+            ConnectUdpEvent::Negotiated(n) => Self::Negotiated(n),
+            ConnectUdpEvent::Session {
+                stream_id, status, ..
+            } => {
+                data.extend_from_slice(b"HTTP/3 ");
+                data.extend_from_slice(status.to_string().as_bytes());
+                data.extend_from_slice(b"\r\n\r\n");
+                Self::Session(stream_id.as_u64())
+            }
+            ConnectUdpEvent::SessionClosed {
+                stream_id, reason, ..
+            } => match reason {
+                SessionCloseReason::Status(status) => {
+                    data.extend_from_slice(b"HTTP/3 ");
+                    data.extend_from_slice(status.to_string().as_bytes());
+                    data.extend_from_slice(b"\r\n\r\n");
+                    Self::Session(stream_id.as_u64())
+                }
+                _ => Self::SessionClosed {
+                    stream_id: stream_id.as_u64(),
+                    reason: SessionCloseReasonExternal::new(reason, data),
+                },
+            },
+            ConnectUdpEvent::Datagram {
                 session_id,
                 datagram,
             } => {
@@ -1595,6 +1650,7 @@ pub enum Http3Event {
     },
     EchFallbackAuthenticationNeeded,
     WebTransport(WebTransportEventExternal),
+    ConnectUdp(ConnectUdpEventExternal),
     NoEvent,
 }
 
@@ -1785,6 +1841,9 @@ pub extern "C" fn neqo_http3conn_event(
             }
             Http3ClientEvent::WebTransport(e) => {
                 Http3Event::WebTransport(WebTransportEventExternal::new(e, data))
+            }
+            Http3ClientEvent::ConnectUdp(e) => {
+                Http3Event::ConnectUdp(ConnectUdpEventExternal::new(e, data))
             }
         };
 
@@ -2026,6 +2085,41 @@ pub extern "C" fn neqo_http3conn_webtransport_create_session(
 }
 
 #[no_mangle]
+pub extern "C" fn neqo_http3conn_connect_udp_create_session(
+    conn: &mut NeqoHttp3Conn,
+    host: &nsACString,
+    path: &nsACString,
+    headers: &nsACString,
+    stream_id: &mut u64,
+) -> nsresult {
+    let hdrs = match parse_headers(headers) {
+        Err(e) => {
+            return e;
+        }
+        Ok(h) => h,
+    };
+    let Ok(host_tmp) = str::from_utf8(host) else {
+        return NS_ERROR_INVALID_ARG;
+    };
+    let Ok(path_tmp) = str::from_utf8(path) else {
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    match conn.conn.connect_udp_create_session(
+        Instant::now(),
+        &("https", host_tmp, path_tmp),
+        &hdrs,
+    ) {
+        Ok(id) => {
+            *stream_id = id.as_u64();
+            NS_OK
+        }
+        Err(Http3Error::StreamLimit) => NS_BASE_STREAM_WOULD_BLOCK,
+        Err(_) => NS_ERROR_UNEXPECTED,
+    }
+}
+
+#[no_mangle]
 pub extern "C" fn neqo_http3conn_webtransport_close_session(
     conn: &mut NeqoHttp3Conn,
     session_id: u64,
@@ -2038,6 +2132,25 @@ pub extern "C" fn neqo_http3conn_webtransport_close_session(
     match conn
         .conn
         .webtransport_close_session(StreamId::from(session_id), error, message_tmp)
+    {
+        Ok(()) => NS_OK,
+        Err(_) => NS_ERROR_INVALID_ARG,
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn neqo_http3conn_connect_udp_close_session(
+    conn: &mut NeqoHttp3Conn,
+    session_id: u64,
+    error: u32,
+    message: &nsACString,
+) -> nsresult {
+    let Ok(message_tmp) = str::from_utf8(message) else {
+        return NS_ERROR_INVALID_ARG;
+    };
+    match conn
+        .conn
+        .connect_udp_close_session(StreamId::from(session_id), error, message_tmp)
     {
         Ok(()) => NS_OK,
         Err(_) => NS_ERROR_INVALID_ARG,
@@ -2079,6 +2192,27 @@ pub extern "C" fn neqo_http3conn_webtransport_send_datagram(
     match conn
         .conn
         .webtransport_send_datagram(StreamId::from(session_id), data, id)
+    {
+        Ok(()) => NS_OK,
+        Err(Http3Error::Transport(TransportError::TooMuchData)) => NS_ERROR_NOT_AVAILABLE,
+        Err(_) => NS_ERROR_UNEXPECTED,
+    }
+}
+#[no_mangle]
+pub extern "C" fn neqo_http3conn_connect_udp_send_datagram(
+    conn: &mut NeqoHttp3Conn,
+    session_id: u64,
+    data: &mut ThinVec<u8>,
+    tracking_id: u64,
+) -> nsresult {
+    let id = if tracking_id == 0 {
+        None
+    } else {
+        Some(tracking_id)
+    };
+    match conn
+        .conn
+        .connect_udp_send_datagram(StreamId::from(session_id), data, id)
     {
         Ok(()) => NS_OK,
         Err(Http3Error::Transport(TransportError::TooMuchData)) => NS_ERROR_NOT_AVAILABLE,

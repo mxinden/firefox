@@ -149,9 +149,22 @@ class NeqoHttp3Conn final {
                                                       &aHeaders, aSessionId);
   }
 
+  nsresult CreateConnectUdp(const nsACString& aHost, const nsACString& aPath,
+                              const nsACString& aHeaders,
+                              uint64_t* aSessionId) {
+    return neqo_http3conn_connect_udp_create_session(this, &aHost, &aPath,
+                                                      &aHeaders, aSessionId);
+  }
+
   nsresult CloseWebTransport(uint64_t aSessionId, uint32_t aError,
                              const nsACString& aMessage) {
     return neqo_http3conn_webtransport_close_session(this, aSessionId, aError,
+                                                     &aMessage);
+  }
+
+  nsresult CloseConnectUdp(uint64_t aSessionId, uint32_t aError,
+                             const nsACString& aMessage) {
+    return neqo_http3conn_connect_udp_close_session(this, aSessionId, aError,
                                                      &aMessage);
   }
 
@@ -166,6 +179,13 @@ class NeqoHttp3Conn final {
                                     nsTArray<uint8_t>& aData,
                                     uint64_t aTrackingId) {
     return neqo_http3conn_webtransport_send_datagram(this, aSessionId, &aData,
+                                                     aTrackingId);
+  }
+
+  nsresult ConnectUdpSendDatagram(uint64_t aSessionId,
+                                    nsTArray<uint8_t>& aData,
+                                    uint64_t aTrackingId) {
+    return neqo_http3conn_connect_udp_send_datagram(this, aSessionId, &aData,
                                                      aTrackingId);
   }
 

@@ -5,7 +5,7 @@
 // except according to those terms.
 
 use base64::prelude::*;
-use neqo_bin::server::{HttpServer, Runner};
+use neqo_bin::server::{Args, HttpServer, Runner};
 use neqo_common::{event::Provider, qdebug, qtrace, Datagram, Header};
 use neqo_crypto::{generate_ech_keys, init_db, AllowZeroRtt, AntiReplay};
 use neqo_http3::{
@@ -14,7 +14,8 @@ use neqo_http3::{
 };
 use neqo_transport::server::ConnectionRef;
 use neqo_transport::{
-    ConnectionEvent, ConnectionParameters, OutputBatch, RandomConnectionIdGenerator, StreamType,
+    ConnectionEvent, ConnectionIdGenerator, ConnectionParameters, OutputBatch,
+    RandomConnectionIdGenerator, StreamType,
 };
 use std::env;
 
@@ -184,13 +185,20 @@ impl Http3TestServer {
 }
 
 impl HttpServer for Http3TestServer {
-    fn process_multiple(
+    fn new(
+        args: &Args,
+        anti_replay: AntiReplay,
+        cid_mgr: Rc<RefCell<dyn ConnectionIdGenerator>>,
+    ) -> Self {
+        todo!()
+    }
+    fn process_multiple<'a>(
         &mut self,
-        dgram: Option<Datagram<&mut [u8]>>,
+        dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
         now: Instant,
         max_datagrams: std::num::NonZeroUsize,
     ) -> OutputBatch {
-        let output = self.server.process_multiple(dgram, now, max_datagrams);
+        let output = self.server.process_multiple(dgrams, now, max_datagrams);
 
         let output = if self.sessions_to_close.is_empty() && self.connections_to_close.is_empty() {
             output
@@ -688,6 +696,7 @@ impl HttpServer for Http3TestServer {
                     );
                     self.received_datagram = Some(datagram);
                 }
+                Http3ServerEvent::ConnectUdp(_) => todo!(),
             }
         }
     }
@@ -706,13 +715,20 @@ impl ::std::fmt::Display for Server {
 }
 
 impl HttpServer for Server {
-    fn process_multiple(
+    fn new(
+        args: &Args,
+        anti_replay: AntiReplay,
+        cid_mgr: Rc<RefCell<dyn ConnectionIdGenerator>>,
+    ) -> Self {
+        todo!()
+    }
+    fn process_multiple<'a>(
         &mut self,
-        dgram: Option<Datagram<&mut [u8]>>,
+        dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
         now: Instant,
         max_datagrams: std::num::NonZeroUsize,
     ) -> OutputBatch {
-        self.0.process_multiple(dgram, now, max_datagrams)
+        self.0.process_multiple(dgrams, now, max_datagrams)
     }
 
     fn process_events(&mut self, _now: Instant) {
@@ -947,13 +963,20 @@ impl Http3ProxyServer {
 }
 
 impl HttpServer for Http3ProxyServer {
-    fn process_multiple(
+    fn new(
+        args: &Args,
+        anti_replay: AntiReplay,
+        cid_mgr: Rc<RefCell<dyn ConnectionIdGenerator>>,
+    ) -> Self {
+        todo!()
+    }
+    fn process_multiple<'a>(
         &mut self,
-        dgram: Option<Datagram<&mut [u8]>>,
+        dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
         now: Instant,
         max_datagrams: std::num::NonZeroUsize,
     ) -> OutputBatch {
-        let output = self.server.process_multiple(dgram, now, max_datagrams);
+        let output = self.server.process_multiple(dgrams, now, max_datagrams);
 
         #[cfg(not(target_os = "android"))]
         let output = if self.response_to_send.is_empty() {
@@ -1062,6 +1085,7 @@ impl HttpServer for Http3ProxyServer {
                     );
                 }
                 Http3ServerEvent::WebTransport(_) => {}
+                Http3ServerEvent::ConnectUdp(_) => todo!(),
             }
         }
     }
@@ -1081,9 +1105,16 @@ impl ::std::fmt::Display for NonRespondingServer {
 }
 
 impl HttpServer for NonRespondingServer {
-    fn process_multiple(
+    fn new(
+        args: &Args,
+        anti_replay: AntiReplay,
+        cid_mgr: Rc<RefCell<dyn ConnectionIdGenerator>>,
+    ) -> Self {
+        todo!()
+    }
+    fn process_multiple<'a>(
         &mut self,
-        _dgram: Option<Datagram<&mut [u8]>>,
+        _dgrams: impl IntoIterator<Item = Datagram<&'a mut [u8]>>,
         _now: Instant,
         _max_datagrams: std::num::NonZeroUsize,
     ) -> OutputBatch {
@@ -1107,7 +1138,8 @@ enum ServerType {
 fn new_runner(
     server_type: ServerType,
     port: u16,
-) -> Result<(SocketAddr, Option<Vec<u8>>, Runner), io::Error> {
+    local: &tokio::task::LocalSet,
+) -> Result<(SocketAddr, Option<Vec<u8>>), io::Error> {
     let mut ech_config = None;
     let addr: SocketAddr = if cfg!(target_os = "windows") {
         format!("127.0.0.1:{}", port).parse().unwrap()
@@ -1135,39 +1167,66 @@ fn new_runner(
         .expect("unable to setup anti-replay");
     let cid_mgr = Rc::new(RefCell::new(RandomConnectionIdGenerator::new(10)));
 
-    let server: Box<dyn HttpServer> = match server_type {
-        ServerType::Http3 => Box::new(Http3TestServer::new(
-            Http3Server::new(
-                Instant::now(),
-                &[" HTTP2 Test Cert"],
-                PROTOCOLS,
-                anti_replay,
-                cid_mgr,
-                Http3Parameters::default()
-                    .max_table_size_encoder(MAX_TABLE_SIZE)
-                    .max_table_size_decoder(MAX_TABLE_SIZE)
-                    .max_blocked_streams(MAX_BLOCKED_STREAMS)
-                    .webtransport(true)
-                    .connection_parameters(ConnectionParameters::default().datagram_size(1200)),
-                None,
-            )
-            .expect("We cannot make a server!"),
-        )),
-        ServerType::Http3Fail => Box::new(Server(
-            neqo_transport::server::Server::new(
-                Instant::now(),
-                &[" HTTP2 Test Cert"],
-                PROTOCOLS,
-                anti_replay,
-                Box::new(AllowZeroRtt {}),
-                cid_mgr,
-                ConnectionParameters::default(),
-            )
-            .expect("We cannot make a server!"),
-        )),
-        ServerType::Http3NoResponse => Box::new(NonRespondingServer::default()),
+    // TODO: Can we use HttpServer::new instead?
+    match server_type {
+        ServerType::Http3 => {
+            let runner = Runner::new(
+                Http3TestServer::new(
+                    Http3Server::new(
+                        Instant::now(),
+                        &[" HTTP2 Test Cert"],
+                        PROTOCOLS,
+                        anti_replay,
+                        cid_mgr,
+                        Http3Parameters::default()
+                            .max_table_size_encoder(MAX_TABLE_SIZE)
+                            .max_table_size_decoder(MAX_TABLE_SIZE)
+                            .max_blocked_streams(MAX_BLOCKED_STREAMS)
+                            .webtransport(true)
+                            .connection_parameters(
+                                ConnectionParameters::default().datagram_size(1200),
+                            ),
+                        None,
+                    )
+                    .expect("We cannot make a server!"),
+                ),
+                Box::new(Instant::now),
+                vec![(local_addr, socket)],
+            );
+            local.spawn_local(runner.run());
+            return Ok((local_addr, ech_config));
+        }
+        ServerType::Http3Fail => {
+            let runner = Runner::new(
+                Server(
+                    neqo_transport::server::Server::new(
+                        Instant::now(),
+                        &[" HTTP2 Test Cert"],
+                        PROTOCOLS,
+                        anti_replay,
+                        Box::new(AllowZeroRtt {}),
+                        cid_mgr,
+                        ConnectionParameters::default(),
+                    )
+                    .expect("We cannot make a server!"),
+                ),
+                Box::new(Instant::now),
+                vec![(local_addr, socket)],
+            );
+            local.spawn_local(runner.run());
+            return Ok((local_addr, ech_config));
+        }
+        ServerType::Http3NoResponse => {
+            let runner = Runner::new(
+                NonRespondingServer::default(),
+                Box::new(Instant::now),
+                vec![(local_addr, socket)],
+            );
+            local.spawn_local(runner.run());
+            return Ok((local_addr, ech_config));
+        }
         ServerType::Http3Ech => {
-            let mut server = Box::new(Http3TestServer::new(
+            let mut server = Http3TestServer::new(
                 Http3Server::new(
                     Instant::now(),
                     &[" HTTP2 Test Cert"],
@@ -1181,14 +1240,17 @@ fn new_runner(
                     None,
                 )
                 .expect("We cannot make a server!"),
-            ));
-            let ref mut unboxed_server = (*server).server;
+            );
             let (sk, pk) = generate_ech_keys().unwrap();
-            unboxed_server
+            server
+                .server
                 .enable_ech(ECH_CONFIG_ID, ECH_PUBLIC_NAME, &sk, &pk)
                 .expect("unable to enable ech");
-            ech_config = Some(Vec::from(unboxed_server.ech_config()));
-            server
+            ech_config = Some(Vec::from(server.server.ech_config()));
+            let runner = Runner::new(server, Box::new(Instant::now), vec![(local_addr, socket)]);
+            local.spawn_local(runner.run());
+
+            return Ok((local_addr, ech_config));
         }
         ServerType::Http3Proxy => {
             let server_config = if env::var("MOZ_HTTP3_MOCHITEST").is_ok() {
@@ -1196,7 +1258,7 @@ fn new_runner(
             } else {
                 (" HTTP2 Test Cert", -1)
             };
-            let server = Box::new(Http3ProxyServer::new(
+            let server = Http3ProxyServer::new(
                 Http3Server::new(
                     Instant::now(),
                     &[server_config.0],
@@ -1213,16 +1275,14 @@ fn new_runner(
                 )
                 .expect("We cannot make a server!"),
                 server_config.1,
-            ));
-            server
-        }
-    };
+            );
 
-    Ok((
-        local_addr,
-        ech_config,
-        Runner::new(Box::new(Instant::now), server, vec![(local_addr, socket)]),
-    ))
+            let runner = Runner::new(server, Box::new(Instant::now), vec![(local_addr, socket)]);
+            local.spawn_local(runner.run());
+
+            return Ok((local_addr, ech_config));
+        }
+    }
 }
 
 #[tokio::main]
@@ -1269,13 +1329,11 @@ async fn main() -> Result<(), io::Error> {
         (ServerType::Http3Proxy, proxy_port),
         (ServerType::Http3NoResponse, 0),
     ] {
-        let (address, ech, runner) = new_runner(server_type, port)?;
+        let (address, ech) = new_runner(server_type, port, &local)?;
         hosts.push(address);
         if let Some(ech) = ech {
             ech_config = Some(ech);
         }
-
-        local.spawn_local(runner.run());
     }
 
     // Note this is parsed by test runner.

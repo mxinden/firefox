@@ -264,3 +264,12 @@ allocator-api2 = { path = "third_party/rust/allocator-api2" }
 
 # Patched version of zip 2.4.2 to allow for reading omnijars.
 zip = { path = "third_party/rust/zip" }
+
+[patch."https://github.com/mozilla/neqo"]
+neqo-bin = { git = "https://github.com/mxinden/neqo", branch = "connect-udp" }
+neqo-common = { git = "https://github.com/mxinden/neqo", branch = "connect-udp" }
+neqo-crypto = { git = "https://github.com/mxinden/neqo", branch = "connect-udp" }
+neqo-http3 = { git = "https://github.com/mxinden/neqo", branch = "connect-udp" }
+neqo-qpack = { git = "https://github.com/mxinden/neqo", branch = "connect-udp" }
+neqo-transport = { git = "https://github.com/mxinden/neqo", branch = "connect-udp" }
+neqo-udp = { git = "https://github.com/mxinden/neqo", branch = "connect-udp" }

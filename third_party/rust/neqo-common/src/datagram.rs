@@ -65,6 +65,16 @@ impl<D: AsRef<[u8]>> Datagram<D> {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    #[must_use]
+    pub fn to_owned(&self) -> Datagram {
+        Datagram {
+            src: self.src,
+            dst: self.dst,
+            tos: self.tos,
+            d: self.d.as_ref().to_vec(),
+        }
+    }
 }
 
 impl<D: AsMut<[u8]> + AsRef<[u8]>> AsMut<[u8]> for Datagram<D> {
@@ -114,16 +124,6 @@ impl<'a> Datagram<&'a mut [u8]> {
     #[must_use]
     pub fn from_slice(src: SocketAddr, dst: SocketAddr, tos: Tos, d: &'a mut [u8]) -> Self {
         Self { src, dst, tos, d }
-    }
-
-    #[must_use]
-    pub fn to_owned(&self) -> Datagram {
-        Datagram {
-            src: self.src,
-            dst: self.dst,
-            tos: self.tos,
-            d: self.d.to_vec(),
-        }
     }
 }
 
@@ -235,9 +235,22 @@ impl DatagramBatch {
         self.d.len().div_ceil(self.datagram_size)
     }
 
-    #[cfg(feature = "build-fuzzing-corpus")]
-    pub fn iter(&self) -> impl Iterator<Item = &[u8]> {
-        self.d.chunks(self.datagram_size)
+    pub fn iter(&self) -> impl Iterator<Item = Datagram<&[u8]>> {
+        self.d.chunks(self.datagram_size).map(|d| Datagram {
+            src: self.src,
+            dst: self.dst,
+            tos: self.tos,
+            d: d,
+        })
+    }
+
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = Datagram<&mut [u8]>> {
+        self.d.chunks_mut(self.datagram_size).map(|d| Datagram {
+            src: self.src,
+            dst: self.dst,
+            tos: self.tos,
+            d: d,
+        })
     }
 }
 

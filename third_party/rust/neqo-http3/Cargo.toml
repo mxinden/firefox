@@ -61,6 +61,10 @@ path = "src/lib.rs"
 bench = false
 
 [[test]]
+name = "connect_udp"
+path = "tests/connect_udp.rs"
+
+[[test]]
 name = "httpconn"
 path = "tests/httpconn.rs"
 
@@ -75,12 +79,6 @@ path = "tests/send_message.rs"
 [[test]]
 name = "webtransport"
 path = "tests/webtransport.rs"
-
-[[bench]]
-name = "streams"
-path = "benches/streams.rs"
-harness = false
-required-features = ["bench"]
 
 [dependencies.enumset]
 version = "1.1"

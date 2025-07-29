@@ -24,9 +24,10 @@ use rustc_hash::FxHashMap as HashMap;
 use crate::{
     connection::Http3State,
     connection_server::Http3ServerHandler,
-    server_connection_events::Http3ServerConnEvent,
+    server_connection_events::{ConnectUdpEvent, Http3ServerConnEvent, WebTransportEvent},
     server_events::{
-        Http3OrWebTransportStream, Http3ServerEvent, Http3ServerEvents, WebTransportRequest,
+        ConnectUdpRequest, Http3OrWebTransportStream, Http3ServerEvent, Http3ServerEvents,
+        WebTransportRequest,
     },
     settings::HttpZeroRttChecker,
     Http3Parameters, Http3StreamInfo, Res,
@@ -121,24 +122,24 @@ impl Http3Server {
     /// Wrapper around [`Http3Server::process_multiple`] that processes a single
     /// output datagram only.
     #[expect(clippy::missing_panics_doc, reason = "see expect()")]
-    pub fn process<A: AsRef<[u8]> + AsMut<[u8]>>(
+    pub fn process<A: AsRef<[u8]> + AsMut<[u8]>, I: IntoIterator<Item = Datagram<A>>>(
         &mut self,
-        dgram: Option<Datagram<A>>,
+        dgrams: I,
         now: Instant,
     ) -> Output {
-        self.process_multiple(dgram, now, 1.try_into().expect(">0"))
+        self.process_multiple(dgrams, now, 1.try_into().expect(">0"))
             .try_into()
             .expect("max_datagrams is 1")
     }
 
-    pub fn process_multiple(
+    pub fn process_multiple<A: AsRef<[u8]> + AsMut<[u8]>, I: IntoIterator<Item = Datagram<A>>>(
         &mut self,
-        dgram: Option<Datagram<impl AsRef<[u8]> + AsMut<[u8]>>>,
+        dgrams: I,
         now: Instant,
         max_datagrams: NonZeroUsize,
     ) -> OutputBatch {
         qtrace!("[{self}] Process");
-        let out = self.server.process_multiple(dgram, now, max_datagrams);
+        let out = self.server.process_multiple(dgrams, now, max_datagrams);
         self.process_http3(now);
         // If we do not that a dgram already try again after process_http3.
         match out {
@@ -251,36 +252,71 @@ impl Http3Server {
                     } => {
                         self.events.priority_update(stream_id, priority);
                     }
-                    Http3ServerConnEvent::ExtendedConnect { stream_id, headers } => {
+                    Http3ServerConnEvent::WebTransport(WebTransportEvent::Session {
+                        stream_id,
+                        headers,
+                    }) => {
                         self.events.webtransport_new_session(
                             WebTransportRequest::new(conn.clone(), Rc::clone(handler), stream_id),
                             headers,
                         );
                     }
-                    Http3ServerConnEvent::ExtendedConnectClosed {
+                    Http3ServerConnEvent::ConnectUdp(ConnectUdpEvent::Session {
+                        stream_id,
+                        headers,
+                    }) => {
+                        self.events.connect_udp_new_session(
+                            ConnectUdpRequest::new(conn.clone(), Rc::clone(handler), stream_id),
+                            headers,
+                        );
+                    }
+                    Http3ServerConnEvent::WebTransport(WebTransportEvent::SessionClosed {
                         stream_id,
                         reason,
                         headers,
                         ..
-                    } => self.events.webtransport_session_closed(
+                    }) => self.events.webtransport_session_closed(
                         WebTransportRequest::new(conn.clone(), Rc::clone(handler), stream_id),
                         reason,
                         headers,
                     ),
-                    Http3ServerConnEvent::ExtendedConnectNewStream(stream_info) => self
+                    Http3ServerConnEvent::ConnectUdp(ConnectUdpEvent::SessionClosed {
+                        stream_id,
+                        reason,
+                        headers,
+                        ..
+                    }) => self.events.connect_udp_session_closed(
+                        ConnectUdpRequest::new(conn.clone(), Rc::clone(handler), stream_id),
+                        reason,
+                        headers,
+                    ),
+                    Http3ServerConnEvent::WebTransport(WebTransportEvent::NewStream(
+                        stream_info,
+                    )) => self
                         .events
                         .webtransport_new_stream(Http3OrWebTransportStream::new(
                             conn.clone(),
                             Rc::clone(handler),
                             stream_info,
                         )),
-                    Http3ServerConnEvent::ExtendedConnectDatagram {
+                    Http3ServerConnEvent::WebTransport(WebTransportEvent::Datagram {
                         session_id,
                         datagram,
-                    } => self.events.webtransport_datagram(
-                        WebTransportRequest::new(conn.clone(), Rc::clone(handler), session_id),
+                    }) => {
+                        self.events.webtransport_datagram(
+                            WebTransportRequest::new(conn.clone(), Rc::clone(handler), session_id),
+                            datagram,
+                        );
+                    }
+                    Http3ServerConnEvent::ConnectUdp(ConnectUdpEvent::Datagram {
+                        session_id,
                         datagram,
-                    ),
+                    }) => {
+                        self.events.connect_udp_datagram(
+                            ConnectUdpRequest::new(conn.clone(), Rc::clone(handler), session_id),
+                            datagram,
+                        );
+                    }
                 }
             }
         }
@@ -447,7 +483,7 @@ mod tests {
         let needs_auth = client
             .events()
             .any(|e| e == ConnectionEvent::AuthenticationNeeded);
-        let c2 = if needs_auth {
+        let c3 = if needs_auth {
             assert!(!resume);
             // c2 should just be an ACK, so absorb that.
             let s_ack = server.process(c2.dgram(), now());
@@ -457,12 +493,13 @@ mod tests {
             client.process_output(now())
         } else {
             assert!(resume);
-            c2
+            let s3 = server.process(c2.dgram(), now()).dgram();
+            client.process(s3, now())
         };
         assert!(client.state().connected());
-        let s2 = server.process(c2.dgram(), now());
+        let s4 = server.process(c3.dgram(), now());
         assert_connected(server);
-        _ = client.process(s2.dgram(), now());
+        _ = client.process(s4.dgram(), now());
     }
 
     // Start a client/server and check setting frame.
@@ -962,7 +999,8 @@ mod tests {
                 | Http3ServerEvent::StreamStopSending { .. }
                 | Http3ServerEvent::StateChange { .. }
                 | Http3ServerEvent::PriorityUpdate { .. }
-                | Http3ServerEvent::WebTransport(_) => {}
+                | Http3ServerEvent::WebTransport(_)
+                | Http3ServerEvent::ConnectUdp(_) => {}
             }
         }
         assert_eq!(headers_frames, 1);
@@ -1011,7 +1049,8 @@ mod tests {
                 | Http3ServerEvent::StreamStopSending { .. }
                 | Http3ServerEvent::StateChange { .. }
                 | Http3ServerEvent::PriorityUpdate { .. }
-                | Http3ServerEvent::WebTransport(_) => {}
+                | Http3ServerEvent::WebTransport(_)
+                | Http3ServerEvent::ConnectUdp(_) => {}
             }
         }
         let out = hconn.process_output(now());
@@ -1038,7 +1077,8 @@ mod tests {
                 | Http3ServerEvent::StreamStopSending { .. }
                 | Http3ServerEvent::StateChange { .. }
                 | Http3ServerEvent::PriorityUpdate { .. }
-                | Http3ServerEvent::WebTransport(_) => {}
+                | Http3ServerEvent::WebTransport(_)
+                | Http3ServerEvent::ConnectUdp(_) => {}
             }
         }
         assert_eq!(headers_frames, 1);
@@ -1082,7 +1122,8 @@ mod tests {
                 | Http3ServerEvent::StreamStopSending { .. }
                 | Http3ServerEvent::StateChange { .. }
                 | Http3ServerEvent::PriorityUpdate { .. }
-                | Http3ServerEvent::WebTransport(_) => {}
+                | Http3ServerEvent::WebTransport(_)
+                | Http3ServerEvent::ConnectUdp(_) => {}
             }
         }
         let out = hconn.process_output(now());
@@ -1311,7 +1352,8 @@ mod tests {
                 | Http3ServerEvent::StreamStopSending { .. }
                 | Http3ServerEvent::StateChange { .. }
                 | Http3ServerEvent::PriorityUpdate { .. }
-                | Http3ServerEvent::WebTransport(_) => {}
+                | Http3ServerEvent::WebTransport(_)
+                | Http3ServerEvent::ConnectUdp(_) => {}
             }
         }
         assert_eq!(requests.len(), 2);

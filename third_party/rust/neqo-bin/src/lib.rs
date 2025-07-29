@@ -27,7 +27,7 @@ pub mod udp;
 /// See `network.buffer.cache.size` pref <https://searchfox.org/mozilla-central/rev/f6e3b81aac49e602f06c204f9278da30993cdc8a/modules/libpref/init/all.js#3212>
 const STREAM_IO_BUFFER_SIZE: usize = 32 * 1024;
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, Clone)]
 pub struct SharedArgs {
     #[command(flatten)]
     verbose: Option<clap_verbosity_flag::Verbosity>,
@@ -81,7 +81,14 @@ impl Default for SharedArgs {
     }
 }
 
-#[derive(Debug, Parser)]
+impl SharedArgs {
+    #[must_use]
+    pub fn get_alpn(&self) -> &str {
+        &self.alpn
+    }
+}
+
+#[derive(Debug, Parser, Clone)]
 pub struct QuicParameters {
     #[arg(
         short = 'Q',
@@ -314,7 +321,11 @@ mod tests {
         server_args.set_qlog_dir(temp_dir.path());
 
         let client = client::client(client_args);
-        let server = Box::pin(server::server(server_args).unwrap().run());
+        let server = Box::pin(
+            server::server::<server::http3::HttpServer>(server_args)
+                .unwrap()
+                .run(),
+        );
         tokio::select! {
             _ = client => {}
             res = server  => panic!("expect server not to terminate: {res:?}"),
