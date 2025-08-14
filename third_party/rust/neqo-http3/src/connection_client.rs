@@ -336,7 +336,7 @@ impl Http3Client {
         let push_streams = http3_parameters.get_max_concurrent_push_streams();
         let mut base_handler = Http3Connection::new(http3_parameters, Role::Client);
         // TODO: Only set the listener in a specific case.
-        if webtransport | connect  {
+        if webtransport | connect {
             base_handler.set_features_listener(events.clone());
         }
         Self {

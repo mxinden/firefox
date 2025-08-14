@@ -173,9 +173,7 @@ impl RecvMessage {
             return Err(Error::HttpGeneralProtocolStream);
         }
 
-
-
-        let is_connect= self.message_type == MessageType::Request
+        let is_connect = self.message_type == MessageType::Request
             && headers.contains_header(":method", "CONNECT");
         if is_connect {
             self.conn_events

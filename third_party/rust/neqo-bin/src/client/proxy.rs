@@ -6,9 +6,9 @@
 
 #![expect(clippy::unwrap_used, reason = "This is example code.")]
 
-//! An HTTP 3 client implementation.
+//! An HTTP/3 MASQUE connect-udp proxy client.
 
-use std::{fmt::Display, net::SocketAddr, num::NonZeroUsize, time::Instant};
+use std::{cmp::min, fmt::Display, net::SocketAddr, num::NonZeroUsize, time::Instant};
 
 use neqo_common::{event::Provider, qwarn, Datagram, Tos};
 use neqo_crypto::{AuthenticationStatus, ResumptionToken};
@@ -27,32 +27,33 @@ impl Handler {
 }
 
 pub struct Proxy {
-    client: Http3Client,
+    proxied_conn: Http3Client,
     handler: super::http3::Handler,
     proxy_conn: Http3Client,
     url: Url,
-    stream_id: Option<StreamId>,
+    /// The MASQUE connect-udp session ID, i.e. the HTTP EXTENDED CONNECT stream ID.
+    session_id: Option<StreamId>,
     local: Option<SocketAddr>,
     remote: Option<SocketAddr>,
-    header: Option<Header>,
+    headers: Vec<Header>,
 }
 impl Proxy {
-    pub(crate) fn new(
-        client: Http3Client,
+    pub(crate) const fn new(
+        proxied_conn: Http3Client,
         handler: super::http3::Handler,
         proxy: Http3Client,
         url: Url,
-        header: Option<Header>,
+        headers: Vec<Header>,
     ) -> Self {
         Self {
-            client,
+            proxied_conn,
             handler,
             proxy_conn: proxy,
             url,
-            stream_id: None,
+            session_id: None,
             local: None,
             remote: None,
-            header,
+            headers,
         }
     }
 }
@@ -63,12 +64,12 @@ impl Client for Proxy {
         now: Instant,
         max_datagrams: NonZeroUsize,
     ) -> OutputBatch {
-        let maybe_callback = loop {
-            let Some(stream_id) = self.stream_id else {
+        let maybe_proxied_conn_callback = loop {
+            let Some(stream_id) = self.session_id else {
                 // If we don't have a stream ID, we can't send anything.
                 break None;
             };
-            match self.client.process_output(now) {
+            match self.proxied_conn.process_output(now) {
                 neqo_http3::Output::None => break None,
                 neqo_http3::Output::Callback(duration) => break Some(duration),
                 neqo_http3::Output::Datagram(datagram) => {
@@ -85,22 +86,17 @@ impl Client for Proxy {
             }
         };
 
-        let maybe_callback_2 = match self.proxy_conn.process_multiple_output(now, max_datagrams) {
-            OutputBatch::None => None,
-            o @ OutputBatch::DatagramBatch(_) => return o,
-            OutputBatch::Callback(duration) => Some(duration),
-        };
+        let maybe_proxy_conn_callback =
+            match self.proxy_conn.process_multiple_output(now, max_datagrams) {
+                OutputBatch::None => None,
+                o @ OutputBatch::DatagramBatch(_) => return o,
+                OutputBatch::Callback(duration) => Some(duration),
+            };
 
-        match (maybe_callback, maybe_callback_2) {
+        match (maybe_proxied_conn_callback, maybe_proxy_conn_callback) {
             (None, None) => OutputBatch::None,
             (Some(duration), None) | (None, Some(duration)) => OutputBatch::Callback(duration),
-            (Some(d1), Some(d2)) => {
-                if d1 < d2 {
-                    OutputBatch::Callback(d1)
-                } else {
-                    OutputBatch::Callback(d2)
-                }
-            }
+            (Some(d1), Some(d2)) => OutputBatch::Callback(min(d1, d2)),
         }
     }
 
@@ -126,37 +122,25 @@ impl Client for Proxy {
                 Http3ClientEvent::DataWritable { stream_id } => {
                     panic!("{stream_id} is writable");
                 }
-                Http3ClientEvent::RequestsCreatable => {}
-                Http3ClientEvent::StateChange(Http3State::Connected) => {
-                    assert!(self.proxy_conn.state().active());
-                    self.proxy_conn
-                        .connect_udp_create_session(Instant::now(), &self.url, &self.header.iter().cloned().collect::<Vec<_>>())
-                        .unwrap();
-                }
                 Http3ClientEvent::ZeroRttRejected => {
                     panic!("Zero RTT rejected");
                 }
-                Http3ClientEvent::ResumptionToken(_) => {}
                 Http3ClientEvent::ConnectUdp(event) => match event {
-                    ConnectUdpEvent::Negotiated(_) => todo!(),
-                    ConnectUdpEvent::Session {
-                        stream_id,
-                        status: _,
-                        headers: _,
-                    } => {
-                        self.stream_id = Some(stream_id);
+                    ConnectUdpEvent::Negotiated(success) => {
+                        assert!(success);
+                        assert!(self.proxy_conn.state().active());
+                        self.proxy_conn
+                            .connect_udp_create_session(Instant::now(), &self.url, &self.headers)
+                            .unwrap();
                     }
-                    ConnectUdpEvent::SessionClosed {
-                        stream_id: _,
-                        reason: _,
-                        headers: _,
-                    } => {
+                    ConnectUdpEvent::Session { stream_id, .. } => {
+                        self.session_id = Some(stream_id);
                     }
                     ConnectUdpEvent::Datagram {
                         session_id,
                         datagram,
                     } => {
-                        assert_eq!(session_id, self.stream_id.unwrap());
+                        assert_eq!(session_id, self.session_id.unwrap());
                         let tos = Tos::default();
                         let datagram = Datagram::new(
                             *self.remote.as_ref().unwrap(),
@@ -164,9 +148,13 @@ impl Client for Proxy {
                             tos,
                             datagram,
                         );
-                        self.client.process_input(datagram, now);
+                        self.proxied_conn.process_input(datagram, now);
                     }
+                    ConnectUdpEvent::SessionClosed { .. } => {}
                 },
+                Http3ClientEvent::RequestsCreatable
+                | Http3ClientEvent::StateChange(Http3State::Connected)
+                | Http3ClientEvent::ResumptionToken(_) => {}
                 _ => {
                     qwarn!("Unhandled event {event:?}");
                 }
@@ -178,30 +166,30 @@ impl Client for Proxy {
     where
         S: AsRef<str> + Display,
     {
-        self.client.close(now, app_error, msg.as_ref().to_string());
+        self.proxied_conn
+            .close(now, app_error, msg.as_ref().to_string());
     }
 
     fn is_closed(&self) -> Result<CloseState, CloseReason> {
-        match self.client.is_closed()? {
+        match self.proxied_conn.is_closed()? {
             CloseState::NotClosing => return Ok(CloseState::NotClosing),
             CloseState::Closing => return Ok(CloseState::Closing),
             CloseState::Closed => {}
         }
 
         match self.proxy_conn.is_closed()? {
-            CloseState::NotClosing => Ok(CloseState::Closing),
-            CloseState::Closing => Ok(CloseState::Closing),
             CloseState::Closed => Ok(CloseState::Closed),
+            CloseState::NotClosing | CloseState::Closing => Ok(CloseState::Closing),
         }
     }
 
     fn stats(&self) -> neqo_transport::Stats {
         // TODO: This is the inner conn.
-        self.client.transport_stats()
+        self.proxied_conn.transport_stats()
     }
 
     fn has_events(&self) -> bool {
-        Provider::has_events(&self.client)
+        Provider::has_events(&self.proxied_conn)
     }
 }
 
@@ -209,22 +197,20 @@ impl super::Handler for Handler {
     type Client = Proxy;
 
     fn handle(&mut self, client: &mut Proxy) -> Res<bool> {
+        let done = client.handler.handle(&mut client.proxied_conn)?;
 
-        let done = client.handler.handle(&mut client.client)?;
-
-        if matches!(client.client.is_closed()?, CloseState::Closed) {
-            if let Some(stream_id) = client.stream_id.take() {
+        if matches!(client.proxied_conn.is_closed()?, CloseState::Closed) {
+            if let Some(stream_id) = client.session_id.take() {
                 client
                     .proxy_conn
-                    .connect_udp_close_session(stream_id, 0, "kthxbye!")
-                    .unwrap();
+                    .connect_udp_close_session(stream_id, 0, "kthxbye!")?;
                 client.proxy_conn.close(Instant::now(), 0, "kthxbye!");
             }
 
             return Ok(true);
         }
 
-        if client.stream_id.is_none() {
+        if client.session_id.is_none() {
             return Ok(false);
         }
 

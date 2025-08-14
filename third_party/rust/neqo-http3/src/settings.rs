@@ -194,6 +194,7 @@ impl HSettings {
                 }
                 // other supported settings here
                 (Some(t), Some(v)) => {
+                    // TODO: proper log?
                     println!("Ignoring unknown setting type {t} with value {v}");
                     // ignore unknown setting, it is fine.
                 } // ignore unknown setting, it is fine.

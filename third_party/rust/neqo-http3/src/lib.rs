@@ -165,9 +165,9 @@ use std::{
 };
 
 use buffered_send_stream::BufferedStream;
-pub use client_events::{Http3ClientEvent, WebTransportEvent, ConnectUdpEvent};
+pub use client_events::{ConnectUdpEvent, Http3ClientEvent, WebTransportEvent};
 pub use conn_params::Http3Parameters;
-pub use connection::{Http3State, WebTransportSessionAcceptAction, ConnectUdpSessionAcceptAction};
+pub use connection::{ConnectUdpSessionAcceptAction, Http3State, WebTransportSessionAcceptAction};
 pub use connection_client::Http3Client;
 use features::extended_connect::WebTransportSession;
 use frames::HFrame;
@@ -180,11 +180,14 @@ pub use priority::Priority;
 pub use push_id::PushId;
 pub use server::Http3Server;
 pub use server_events::{
-    Http3OrWebTransportStream, Http3ServerEvent, WebTransportRequest, WebTransportServerEvent, ConnectUdpServerEvent
+    ConnectUdpRequest, ConnectUdpServerEvent, Http3OrWebTransportStream, Http3ServerEvent,
+    WebTransportRequest, WebTransportServerEvent,
 };
 use stream_type_reader::NewStreamType;
 
-use crate::{features::extended_connect::connect_udp::ConnectUdpSession, priority::PriorityHandler};
+use crate::{
+    features::extended_connect::connect_udp::ConnectUdpSession, priority::PriorityHandler,
+};
 
 type Res<T> = Result<T, Error>;
 
@@ -482,7 +485,7 @@ trait RecvStream: Stream {
     }
 
     fn connect_udp(&self) -> Option<Rc<RefCell<ConnectUdpSession>>> {
-        todo!();
+        None
     }
 
     /// This function is only implemented by `WebTransportRecvStream`.
@@ -559,8 +562,7 @@ trait HttpRecvStreamEvents: RecvStreamEvents {
         interim: bool,
         fin: bool,
     );
-    fn extended_connect_new_session(&self, _stream_id: StreamId, _headers: Vec<Header>) {
-    }
+    fn extended_connect_new_session(&self, _stream_id: StreamId, _headers: Vec<Header>) {}
 }
 
 trait SendStream: Stream {

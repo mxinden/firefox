@@ -29,6 +29,7 @@ use neqo_crypto::{
     constants::{TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305_SHA256},
     init, Cipher, ResumptionToken,
 };
+use neqo_http3::Header;
 use neqo_transport::{AppError, CloseReason, ConnectionId, OutputBatch, Version};
 use neqo_udp::RecvBuf;
 use rustc_hash::FxHashMap as HashMap;
@@ -120,8 +121,8 @@ pub struct Args {
     #[arg(short = 'm', default_value = "GET")]
     method: String,
 
-    #[arg(short = 'H', long, number_of_values = 2)]
-    header: Vec<String>,
+    #[arg(name = "header", short = 'H', long)]
+    headers: Vec<Header>,
 
     #[arg(name = "max-push", short = 'p', long, default_value = "10")]
     max_concurrent_push_streams: u64,
@@ -198,7 +199,8 @@ impl Args {
     ) -> Self {
         use std::{iter::repeat_with, str::FromStr as _};
 
-        let addr = server_addr.map_or("[::1]:12345".into(), |a| format!("[::1]:{}", a.port()));
+        let addr =
+            server_addr.map_or_else(|| "[::1]:12345".into(), |a| format!("[::1]:{}", a.port()));
         Self {
             shared: SharedArgs::default(),
             urls: repeat_with(|| Url::from_str(&format!("http://{addr}/{download_size}")).unwrap())
@@ -209,7 +211,7 @@ impl Args {
             } else {
                 "POST".into()
             },
-            header: vec![],
+            headers: vec![],
             max_concurrent_push_streams: 10,
             download_in_series: false,
             concurrency: 100,
@@ -603,56 +605,69 @@ pub async fn client(mut args: Args) -> Res<()> {
     init()?;
 
     if let Some(proxy_url) = &args.proxy {
-        let url = args.urls.pop().expect("TODO");
-        let Origin::Tuple( _scheme, host, _port) =  url.clone().origin() else {
-            panic!();
-        };
+        // Create proxy connection.
         let Origin::Tuple(_scheme, proxy_host, proxy_port) = proxy_url.origin() else {
             panic!();
         };
-        let proxy_addr = format!("{proxy_host}:{proxy_port}").to_socket_addrs()?.find(|addr| {
-            !matches!(
-                (addr, args.ipv4_only, args.ipv6_only),
-                (SocketAddr::V4(..), false, true) | (SocketAddr::V6(..), true, false)
-            )
-        });
-
-        let remote_addr = format!("{proxy_host}:{proxy_port}").to_socket_addrs()?.find(|addr| {
-            !matches!(
-                (addr, args.ipv4_only, args.ipv6_only),
-                (SocketAddr::V4(..), false, true) | (SocketAddr::V6(..), true, false)
-            )
-        }).unwrap();
-        let Some(proxy_addr) = proxy_addr else {
+        let proxy_hostname = { format!("{proxy_host}") };
+        let Some(proxy_addr) = format!("{proxy_host}:{proxy_port}")
+            .to_socket_addrs()?
+            .find(|addr| {
+                !matches!(
+                    (addr, args.ipv4_only, args.ipv6_only),
+                    (SocketAddr::V4(..), false, true) | (SocketAddr::V6(..), true, false)
+                )
+            })
+        else {
             qerror!("No compatible address found for: {proxy_host}");
             exit(1);
         };
         let mut socket = crate::udp::Socket::bind(local_addr_for(&proxy_addr, 0))?;
-        let real_local = socket.local_addr().unwrap();
+        let local_addr = socket.local_addr().unwrap();
         qinfo!(
-            "{} Client connecting: {real_local:?} -> {proxy_addr:?}",
+            "{} Proxy connecting: {local_addr:?} -> {proxy_addr:?}",
             args.shared.alpn
         );
+        let proxy_conn = http3::create_client(&args, local_addr, proxy_addr, &proxy_hostname, None)
+            .expect("failed to create proxy connection");
 
-        let hostname = format!("{host}");
-        let proxy_hostname = format!("{proxy_host}");
+        // Create proxied connection.
+        let url = args.urls.pop().expect("at least one destination URL");
+        let hostname = {
+            let Origin::Tuple(_scheme, host, _port) = url.clone().origin() else {
+                panic!();
+            };
+            format!("{host}")
+        };
         let mut client_args = args.clone();
-        client_args.header = vec![]; // don't share proxy authorization with origin server
-        let client = http3::create_client(&client_args, real_local, remote_addr, &hostname, None)
-            .expect("failed to create client");
-
-        let proxy = http3::create_client(&args, real_local, proxy_addr, &proxy_hostname, None)
-            .expect("failed to create client");
-
-            let mut urls = VecDeque::new();
-            urls.push_back(url.clone());
+        client_args.headers = vec![]; // don't share proxy authorization with origin server
+        let unspecified_addr = if args.ipv4_only {
+            SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0)
+        } else {
+            SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), 0)
+        };
+        let client = http3::create_client(
+            &client_args,
+            unspecified_addr,
+            unspecified_addr,
+            &hostname,
+            None,
+        )
+        .expect("failed to create client");
+        let mut urls = VecDeque::new();
+        urls.push_back(url.clone());
         let handler = http3::Handler::new(urls, args.clone());
 
-        let proxy = proxy::Proxy::new(client, handler, proxy, proxy_url.clone(), http3::to_headers(&args.header).into_iter().next());
-
+        // Combine proxy connection and proxied connection into `Proxy`.
+        let proxy = proxy::Proxy::new(
+            client,
+            handler,
+            proxy_conn,
+            proxy_url.clone(),
+            args.headers.clone(),
+        );
         let proxy_handler = proxy::Handler::new();
-
-        Runner::new(real_local, &mut socket,proxy, proxy_handler, &args)
+        Runner::new(local_addr, &mut socket, proxy, proxy_handler, &args)
             .run()
             .await?;
 

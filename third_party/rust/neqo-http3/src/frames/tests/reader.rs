@@ -69,7 +69,10 @@ fn frame_reading_with_stream_settings1() {
     assert!(frame.is_some());
     if let HFrame::Settings { settings } = frame.unwrap() {
         assert_eq!(settings.len(), 2);
-        assert_eq!(settings[0], HSetting::new(HSettingType::MaxHeaderListSize, 4));
+        assert_eq!(
+            settings[0],
+            HSetting::new(HSettingType::MaxHeaderListSize, 4)
+        );
         assert_eq!(settings[1], HSetting::new(HSettingType::EnableConnect, 1));
     } else {
         panic!("wrong frame type");
@@ -87,10 +90,13 @@ fn frame_reading_with_stream_settings2() {
     }
     let frame = fr.process(&[0x01]);
 
-    assert!(dbg!(&frame).is_some());
+    assert!(&frame.is_some());
     if let HFrame::Settings { settings } = frame.unwrap() {
         assert_eq!(settings.len(), 2);
-        assert_eq!(settings[0], HSetting::new(HSettingType::MaxHeaderListSize, 4));
+        assert_eq!(
+            settings[0],
+            HSetting::new(HSettingType::MaxHeaderListSize, 4)
+        );
         assert_eq!(settings[1], HSetting::new(HSettingType::EnableConnect, 1));
     } else {
         panic!("wrong frame type");

@@ -6,7 +6,7 @@
 
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-use neqo_common::{event::Provider as EventProvider, Header};
+use neqo_common::{event::Provider as EventProvider, qtrace, Header};
 use neqo_crypto::ResumptionToken;
 use neqo_transport::{AppError, StreamId, StreamType};
 
@@ -41,8 +41,8 @@ pub enum WebTransportEvent {
     },
 }
 
-// TODO: Why is the client side called ConnectUdpEvent, but the server side is called ConnectUdpServerEvent? Also in WebTransport.
-// TODO: All needed?
+// TODO: Why is the client side called ConnectUdpEvent, but the server side is called
+// ConnectUdpServerEvent? Also in WebTransport. TODO: All needed?
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ConnectUdpEvent {
     Negotiated(bool),
@@ -407,11 +407,18 @@ impl Http3ClientEvents {
     }
 
     pub fn negotiation_done(&self, feature_type: HSettingType, succeeded: bool) {
-        // TODO: Emit event for extended connect type?
-        if feature_type == HSettingType::EnableWebTransport {
-            self.insert(Http3ClientEvent::WebTransport(
-                WebTransportEvent::Negotiated(succeeded),
-            ));
+        match feature_type {
+            HSettingType::EnableWebTransport => {
+                self.insert(Http3ClientEvent::WebTransport(
+                    WebTransportEvent::Negotiated(succeeded),
+                ));
+            }
+            HSettingType::EnableConnect => {
+                self.insert(Http3ClientEvent::ConnectUdp(ConnectUdpEvent::Negotiated(
+                    succeeded,
+                )));
+            }
+            _ => qtrace!("HSetting {:?} {succeeded} not handled", feature_type),
         }
     }
 }

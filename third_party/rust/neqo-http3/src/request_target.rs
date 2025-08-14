@@ -90,7 +90,7 @@ impl<'x> AsRequestTarget<'x> for Url {
             self.scheme(),
             self.host_str().unwrap_or(""),
             // TODO
-            &self[Position::BeforePath..]
+            &self[Position::BeforePath..],
         ))
     }
 }

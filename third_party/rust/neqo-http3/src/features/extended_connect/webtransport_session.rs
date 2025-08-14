@@ -429,7 +429,8 @@ impl WebTransportSession {
 
     pub fn datagram(&self, datagram: Vec<u8>) {
         if self.state == SessionState::Active {
-            self.events.new_datagram(self.session_id, datagram, ExtendedConnectType::WebTransport);
+            self.events
+                .new_datagram(self.session_id, datagram, ExtendedConnectType::WebTransport);
         }
     }
 }

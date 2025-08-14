@@ -21,11 +21,9 @@ use std::{
     time::Instant,
 };
 
-use neqo_common::{event::Provider, hex, qdebug, qerror, qinfo, qwarn, Datagram, Header};
+use neqo_common::{event::Provider, hex, qdebug, qerror, qinfo, qwarn, Datagram};
 use neqo_crypto::{AuthenticationStatus, ResumptionToken};
-use neqo_http3::{
-    ConnectUdpEvent, Error, Http3Client, Http3ClientEvent, Http3Parameters, Http3State, Priority,
-};
+use neqo_http3::{Error, Http3Client, Http3ClientEvent, Http3Parameters, Http3State, Priority};
 use neqo_transport::{
     AppError, CloseReason, Connection, EmptyConnectionIdGenerator, Error as TransportError,
     OutputBatch, RandomConnectionIdGenerator, StreamId,
@@ -61,6 +59,14 @@ impl Handler {
             output_read_data,
             read_buffer: vec![0; STREAM_IO_BUFFER_SIZE],
         }
+    }
+
+    fn reinit(&mut self) {
+        for url in self.url_handler.handled_urls.drain(..) {
+            self.url_handler.url_queue.push_front(url);
+        }
+        self.url_handler.stream_handlers.clear();
+        self.url_handler.all_paths.clear();
     }
 }
 
@@ -102,6 +108,7 @@ pub fn create_client(
             .max_table_size_decoder(args.shared.max_table_size_decoder)
             .max_blocked_streams(args.shared.max_blocked_streams)
             .max_concurrent_push_streams(args.max_concurrent_push_streams)
+            .connect(true)
             .http3_datagram(true),
     );
 
@@ -171,16 +178,6 @@ impl super::Client for Http3Client {
 
     fn has_events(&self) -> bool {
         Provider::has_events(self)
-    }
-}
-
-impl Handler {
-    fn reinit(&mut self) {
-        for url in self.url_handler.handled_urls.drain(..) {
-            self.url_handler.url_queue.push_front(url);
-        }
-        self.url_handler.stream_handlers.clear();
-        self.url_handler.all_paths.clear();
     }
 }
 
@@ -265,25 +262,6 @@ impl super::Handler for Handler {
                     self.url_handler.process_urls(client);
                 }
                 Http3ClientEvent::ResumptionToken(t) => self.token = Some(t),
-                Http3ClientEvent::ConnectUdp(event) => match event {
-                    ConnectUdpEvent::Negotiated(_) => todo!(),
-                    ConnectUdpEvent::Session {
-                        stream_id: _,
-                        status: _,
-                        headers: _,
-                    } => {
-                        todo!();
-                    }
-                    ConnectUdpEvent::SessionClosed {
-                        stream_id: _,
-                        reason: _,
-                        headers: _,
-                    } => todo!(),
-                    ConnectUdpEvent::Datagram {
-                        session_id: _,
-                        datagram: _,
-                    } => todo!(),
-                },
                 _ => {
                     qwarn!("Unhandled event {event:?}");
                 }
@@ -425,7 +403,7 @@ impl UrlHandler {
             Instant::now(),
             &self.args.method,
             &url,
-            &to_headers(&self.args.header),
+            &self.args.headers,
             Priority::default(),
         ) {
             Ok(client_stream_id) => {
@@ -473,22 +451,5 @@ impl UrlHandler {
     fn on_stream_fin(&mut self, client: &mut Http3Client, stream_id: StreamId) {
         self.stream_handlers.remove(&stream_id);
         self.process_urls(client);
-    }
-}
-
-// TODO: pub
-pub fn to_headers(input: &[impl AsRef<str>]) -> Vec<Header> {
-    let mut headers = vec![];
-    let mut input = input.into_iter();
-    loop {
-        let Some(name) = input.next() else {
-            break headers;
-        };
-
-        let Some(value) = input.next() else {
-            panic!("Header name without value: {:?}", name.as_ref());
-        };
-
-        headers.push(Header::new(name.as_ref(), value.as_ref()));
     }
 }

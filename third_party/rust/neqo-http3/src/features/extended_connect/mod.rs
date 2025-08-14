@@ -4,9 +4,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+pub(crate) mod connect_udp;
 pub(crate) mod webtransport_session;
 pub(crate) mod webtransport_streams;
-pub(crate) mod connect_udp;
 
 use std::fmt::Debug;
 
@@ -58,7 +58,12 @@ pub(crate) trait ExtendedConnectEvents: Debug {
         headers: Option<Vec<Header>>,
     );
     fn extended_connect_new_stream(&self, stream_info: Http3StreamInfo) -> Res<()>;
-    fn new_datagram(&self, session_id: StreamId, datagram: Vec<u8>, connect_type: ExtendedConnectType);
+    fn new_datagram(
+        &self,
+        session_id: StreamId,
+        datagram: Vec<u8>,
+        connect_type: ExtendedConnectType,
+    );
 }
 
 #[derive(Debug, PartialEq, Copy, Clone, Eq)]
@@ -82,7 +87,6 @@ impl ExtendedConnectType {
     )]
     #[must_use]
     pub const fn get_stream_type(self, session_id: StreamId) -> Http3StreamType {
-
         Http3StreamType::WebTransport(session_id)
     }
 }

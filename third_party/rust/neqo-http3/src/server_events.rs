@@ -555,7 +555,6 @@ pub enum ConnectUdpServerEvent {
     },
 }
 
-
 /// Server events for one or more connections.
 #[derive(Debug, Clone)]
 pub enum Http3ServerEvent {
@@ -709,11 +708,7 @@ impl Http3ServerEvents {
         ));
     }
 
-    pub(crate) fn connect_udp_new_session(
-        &self,
-        session: ConnectUdpRequest,
-        headers: Vec<Header>,
-    ) {
+    pub(crate) fn connect_udp_new_session(&self, session: ConnectUdpRequest, headers: Vec<Header>) {
         self.insert(Http3ServerEvent::ConnectUdp(
             ConnectUdpServerEvent::NewSession { session, headers },
         ));

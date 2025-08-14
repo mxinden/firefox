@@ -16,7 +16,9 @@ use neqo_transport::{
 };
 
 use crate::{
-    connection::{ConnectUdpSessionAcceptAction, Http3Connection, Http3State, WebTransportSessionAcceptAction},
+    connection::{
+        ConnectUdpSessionAcceptAction, Http3Connection, Http3State, WebTransportSessionAcceptAction,
+    },
     frames::HFrame,
     recv_message::{RecvMessage, RecvMessageInfo},
     send_message::SendMessage,

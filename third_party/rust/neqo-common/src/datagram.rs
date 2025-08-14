@@ -240,7 +240,7 @@ impl DatagramBatch {
             src: self.src,
             dst: self.dst,
             tos: self.tos,
-            d: d,
+            d,
         })
     }
 
@@ -249,7 +249,7 @@ impl DatagramBatch {
             src: self.src,
             dst: self.dst,
             tos: self.tos,
-            d: d,
+            d,
         })
     }
 }

@@ -11,7 +11,13 @@ use neqo_qpack as qpack;
 use neqo_transport::{Connection, DatagramTracking, StreamId};
 
 use crate::{
-    features::extended_connect::{ExtendedConnectEvents, ExtendedConnectType, SessionCloseReason}, priority::PriorityHandler, recv_message::{RecvMessage, RecvMessageInfo}, send_message::SendMessage, CloseType, Error, Http3StreamInfo, Http3StreamType, HttpRecvStream, HttpRecvStreamEvents, Priority, ReceiveOutput, RecvStream, RecvStreamEvents, Res, SendStream, SendStreamEvents, Stream
+    features::extended_connect::{ExtendedConnectEvents, ExtendedConnectType, SessionCloseReason},
+    priority::PriorityHandler,
+    recv_message::{RecvMessage, RecvMessageInfo},
+    send_message::SendMessage,
+    CloseType, Error, Http3StreamInfo, Http3StreamType, HttpRecvStream, HttpRecvStreamEvents,
+    Priority, ReceiveOutput, RecvStream, RecvStreamEvents, Res, SendStream, SendStreamEvents,
+    Stream,
 };
 
 // TODO: De-duplicate with webtransport_session.rs?
@@ -42,7 +48,11 @@ pub struct ConnectUdpSession {
 
 impl Display for ConnectUdpSession {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "ConnectUdpSession={},role={}", self.session_id, self.role)
+        write!(
+            f,
+            "ConnectUdpSession={},role={}",
+            self.session_id, self.role
+        )
     }
 }
 
@@ -133,16 +143,16 @@ impl ConnectUdpSession {
             SessionState::FinPending
         };
 
-            // TODO: WebTransport only does this on fin.
-            self.events.session_end(
-                ExtendedConnectType::ConnectUdp,
-                self.session_id,
-                SessionCloseReason::Clean {
-                    error,
-                    message: message.to_string(),
-                },
-                None,
-            );
+        // TODO: WebTransport only does this on fin.
+        self.events.session_end(
+            ExtendedConnectType::ConnectUdp,
+            self.session_id,
+            SessionCloseReason::Clean {
+                error,
+                message: message.to_string(),
+            },
+            None,
+        );
 
         Ok(())
     }
@@ -180,6 +190,7 @@ impl ConnectUdpSession {
     /// `control_stream_send` implements the  http specific functions and `http_stream()`
     /// will never return `None`.
     pub fn send_request(&mut self, headers: &[Header], conn: &mut Connection) -> Res<()> {
+        qdebug!("[{self}]: send_request {headers:?}");
         self.control_stream_send
             .http_stream()
             .ok_or(Error::Internal)?
@@ -191,10 +202,7 @@ impl ConnectUdpSession {
         let (out, _) = self.control_stream_recv.receive(conn)?;
         debug_assert!(out == ReceiveOutput::NoOutput);
         self.maybe_check_headers()?;
-        // TODO
-        // self.read_control_stream(conn)?;
-
-
+        self.read_control_stream(conn)?;
         Ok((ReceiveOutput::NoOutput, self.state == SessionState::Done))
     }
 
@@ -306,10 +314,34 @@ impl ConnectUdpSession {
     pub fn datagram(&self, datagram: Vec<u8>) {
         qdebug!("[{self}]: new datagram");
         if self.state == SessionState::Active {
-            self.events.new_datagram(self.session_id, datagram, ExtendedConnectType::ConnectUdp);
+            self.events
+                .new_datagram(self.session_id, datagram, ExtendedConnectType::ConnectUdp);
         } else {
             panic!();
         }
+    }
+
+    /// # Errors
+    ///
+    /// It may return an error if the frame is not correctly decoded.
+    pub fn read_control_stream(&mut self, conn: &mut Connection) -> Res<()> {
+        qdebug!("[{self}]: read_control_stream");
+        // TODO
+        let mut buf = [0; 1500];
+        let (_, fin) = self.control_stream_recv.read_data(conn, buf.as_mut())?;
+        if fin {
+            self.events.session_end(
+                ExtendedConnectType::ConnectUdp,
+                self.session_id,
+                SessionCloseReason::Clean {
+                    error: 0,
+                    message: String::new(),
+                },
+                None,
+            );
+            self.state = SessionState::Done;
+        }
+        Ok(())
     }
 }
 
@@ -320,10 +352,7 @@ impl Stream for Rc<RefCell<ConnectUdpSession>> {
 }
 
 impl RecvStream for Rc<RefCell<ConnectUdpSession>> {
-    fn receive(
-        &mut self,
-        conn: &mut Connection,
-    ) -> Res<(ReceiveOutput, bool)> {
+    fn receive(&mut self, conn: &mut Connection) -> Res<(ReceiveOutput, bool)> {
         self.borrow_mut().receive(conn)
     }
 
@@ -337,10 +366,7 @@ impl RecvStream for Rc<RefCell<ConnectUdpSession>> {
 }
 
 impl HttpRecvStream for Rc<RefCell<ConnectUdpSession>> {
-    fn header_unblocked(
-        &mut self,
-        _conn: &mut Connection,
-    ) -> Res<(ReceiveOutput, bool)> {
+    fn header_unblocked(&mut self, _conn: &mut Connection) -> Res<(ReceiveOutput, bool)> {
         todo!()
     }
 
@@ -372,11 +398,7 @@ impl SendStream for Rc<RefCell<ConnectUdpSession>> {
         self.borrow_mut().done()
     }
 
-    fn send_data(
-        &mut self,
-        _conn: &mut Connection,
-        _buf: &[u8],
-    ) -> Res<usize> {
+    fn send_data(&mut self, _conn: &mut Connection, _buf: &[u8]) -> Res<usize> {
         todo!()
     }
 
