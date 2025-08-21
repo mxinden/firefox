@@ -13,7 +13,7 @@ use neqo_crypto::AuthenticationStatus;
 use neqo_http3::{
     Http3Client, Http3ClientEvent, Http3OrWebTransportStream, Http3Parameters, Http3Server,
     Http3ServerEvent, Http3State, WebTransportEvent, WebTransportRequest, WebTransportServerEvent,
-    WebTransportSessionAcceptAction,
+    SessionAcceptAction,
 };
 use neqo_transport::{ConnectionParameters, StreamId, StreamType};
 use test_fixture::{
@@ -95,7 +95,7 @@ fn create_wt_session(client: &mut Http3Client, server: &mut Http3Server) -> WebT
                         && headers.contains_header(":protocol", "webtransport")
                 );
                 session
-                    .response(&WebTransportSessionAcceptAction::Accept)
+                    .response(&SessionAcceptAction::Accept)
                     .unwrap();
                 wt_server_session = Some(session);
             }
@@ -111,7 +111,7 @@ fn create_wt_session(client: &mut Http3Client, server: &mut Http3Server) -> WebT
     let wt_session_negotiated_event = |e| {
         matches!(
             e,
-            Http3ClientEvent::WebTransport(WebTransportEvent::Session{
+            Http3ClientEvent::WebTransport(WebTransportEvent::NewSession{
                 stream_id,
                 status,
                 headers,
@@ -225,11 +225,16 @@ fn receive_data_server(
 fn wt_keepalive() {
     let (mut client, mut server) = connect();
     let _wt_session = create_wt_session(&mut client, &mut server);
-    let idle_timeout = ConnectionParameters::default().get_idle_timeout();
     // Expect client and server to send PING after half of the idle timeout in order to keep
     // connection alive.
-    assert_eq!(client.process_output(now()).callback(), idle_timeout / 2);
-    assert_eq!(server.process_output(now()).callback(), idle_timeout / 2);
+    assert_eq!(
+        client.process_output(now()).callback(),
+        ConnectionParameters::DEFAULT_IDLE_TIMEOUT / 2
+    );
+    assert_eq!(
+        server.process_output(now()).callback(),
+        ConnectionParameters::DEFAULT_IDLE_TIMEOUT / 2
+    );
 }
 
 #[test]

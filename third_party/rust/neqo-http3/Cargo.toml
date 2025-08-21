@@ -110,7 +110,8 @@ features = ["std"]
 default-features = false
 
 [dependencies.sfv]
-version = "0.9"
+version = "0.14"
+features = ["parsed-types"]
 default-features = false
 
 [dependencies.strum]
