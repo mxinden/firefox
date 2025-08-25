@@ -23,7 +23,7 @@ pub(crate) use webtransport_session::WebTransportSession;
 use crate::{
     client_events::Http3ClientEvents,
     features::{extended_connect::connect_udp::ConnectUdpSession, NegotiationState},
-    frames::{FrameReader, HFrame, StreamReaderRecvStreamWrapper, WebTransportFrame},
+    frames::HFrame,
     priority::PriorityHandler,
     recv_message::{RecvMessage, RecvMessageInfo},
     send_message::SendMessage,
@@ -146,18 +146,14 @@ pub(crate) struct Session {
     stream_event_listener: Rc<RefCell<Listener>>,
     session_id: StreamId,
     state: SessionState,
-    frame_reader: FrameReader,
     events: Box<dyn ExtendedConnectEvents>,
-    send_streams: HashSet<StreamId>,
-    recv_streams: HashSet<StreamId>,
-    role: Role,
     // TODO: Is `protocol` the right term?
     protocol: Protocol,
 }
 
 // TODO: Move
 #[derive(Debug, PartialEq)]
-enum SessionState {
+pub(crate) enum SessionState {
     Negotiating,
     Active,
     FinPending,
@@ -165,12 +161,13 @@ enum SessionState {
 }
 
 impl SessionState {
-    pub const fn closing_state(&self) -> bool {
+    pub(crate) const fn closing_state(&self) -> bool {
         matches!(self, Self::FinPending | Self::Done)
     }
 }
 
 // TODO: Move
+// TODO: Ideally this would be a trait. But that would make RecvStream no longer object safe.
 #[derive(Debug)]
 enum Protocol {
     WebTransport(WebTransportSession),
@@ -178,10 +175,113 @@ enum Protocol {
 }
 
 impl Protocol {
+    fn new(connect_type: ExtendedConnectType, session_id: StreamId, role: Role) -> Self {
+        match connect_type {
+            ExtendedConnectType::WebTransport => {
+                Self::WebTransport(WebTransportSession::new(session_id, role))
+            }
+            ExtendedConnectType::ConnectUdp => Self::ConnectUdp(ConnectUdpSession::new(session_id)),
+        }
+    }
+
     fn connect_type(&self) -> ExtendedConnectType {
         match self {
             Self::WebTransport(_) => ExtendedConnectType::WebTransport,
             Self::ConnectUdp(_) => ExtendedConnectType::ConnectUdp,
+        }
+    }
+
+    fn close_frame(&self, error: u32, message: &str) -> Option<Vec<u8>> {
+        match self {
+            Self::WebTransport(session) => session.close_frame(error, message),
+            Self::ConnectUdp(_) => {
+                // ConnectUdp does not have a close frame.
+                None
+            },
+        }
+    }
+
+    fn read_control_stream(
+        &mut self,
+        conn: &mut Connection,
+        events: &mut Box<dyn ExtendedConnectEvents>,
+        control_stream_recv: &mut Box<dyn RecvStream>,
+    ) -> Res<Option<SessionState>> {
+        match self {
+            Self::WebTransport(session) => {
+                session.read_control_stream(conn, events, control_stream_recv)
+            }
+            Self::ConnectUdp(session) => {
+                session.read_control_stream(conn, events, control_stream_recv)
+            }
+        }
+    }
+
+    fn add_stream(
+        &mut self,
+        stream_id: StreamId,
+        events: &mut Box<dyn ExtendedConnectEvents>,
+    ) -> Res<()> {
+        match self {
+            Self::WebTransport(session) => session.add_stream(stream_id, events),
+            Self::ConnectUdp(_session) => {
+                let msg = "ConnectUdp does not support adding streams";
+                qdebug!("{msg}");
+                debug_assert!(false, "{msg}");
+                Ok(())
+            }
+        }
+    }
+
+    fn remove_recv_stream(&mut self, stream_id: StreamId) {
+        match self {
+            Self::WebTransport(session) => {
+                session.remove_recv_stream(stream_id);
+            }
+            Self::ConnectUdp(_) => {
+                let msg = "ConnectUdp does not support removing recv streams";
+                qdebug!("{msg}");
+                debug_assert!(false, "{msg}");
+            }
+        }
+    }
+
+    fn remove_send_stream(&mut self, stream_id: StreamId) {
+        match self {
+            Self::WebTransport(session) => {
+                session.remove_send_stream(stream_id);
+            }
+            Self::ConnectUdp(_) => {
+                let msg = "ConnectUdp does not support removing send streams";
+                qdebug!("{msg}");
+                debug_assert!(false, "{msg}");
+            }
+        }
+    }
+
+    fn take_sub_streams(&mut self) -> (HashSet<StreamId>, HashSet<StreamId>) {
+        match self {
+            Self::WebTransport(session) => session.take_sub_streams(),
+            Self::ConnectUdp(session) => ConnectUdpSession::take_sub_streams(),
+        }
+    }
+
+    fn write_datagram_prefix(&self, encoder: &mut Encoder) {
+        match self {
+            Self::WebTransport(_) => {
+                // WebTransport does not add prefix (i.e. context ID).
+            }
+            Self::ConnectUdp(_) => ConnectUdpSession::write_datagram_prefix(encoder),
+        }
+    }
+
+    fn read_datagram_prefix<'a>(&self, datagram: &'a [u8]) -> &'a [u8] {
+        match self {
+            Self::WebTransport(_) => {
+                // WebTransport does not add prefix (i.e. context ID).
+                datagram
+            }
+            Self::ConnectUdp(_) => ConnectUdpSession::read_datagram_prefix(datagram),
         }
     }
 }
@@ -204,10 +304,7 @@ impl Session {
         connect_type: ExtendedConnectType,
     ) -> Self {
         let stream_event_listener = Rc::new(RefCell::new(Listener::default()));
-        let protocol = match connect_type {
-            ExtendedConnectType::WebTransport => Protocol::WebTransport(WebTransportSession::new()),
-            ExtendedConnectType::ConnectUdp => Protocol::ConnectUdp(ConnectUdpSession::new()),
-        };
+        let protocol = Protocol::new(connect_type, session_id, role);
         Self {
             control_stream_recv: Box::new(RecvMessage::new(
                 &RecvMessageInfo {
@@ -231,11 +328,7 @@ impl Session {
             stream_event_listener,
             session_id,
             state: SessionState::Negotiating,
-            frame_reader: FrameReader::new(),
             events,
-            send_streams: HashSet::default(),
-            recv_streams: HashSet::default(),
-            role,
             protocol,
         }
     }
@@ -253,10 +346,7 @@ impl Session {
         connect_type: ExtendedConnectType,
     ) -> Res<Self> {
         let stream_event_listener = Rc::new(RefCell::new(Listener::default()));
-        let protocol = match connect_type {
-            ExtendedConnectType::WebTransport => Protocol::WebTransport(WebTransportSession::new()),
-            ExtendedConnectType::ConnectUdp => Protocol::ConnectUdp(ConnectUdpSession::new()),
-        };
+        let protocol = Protocol::new(connect_type, session_id, role);
         control_stream_recv
             .http_stream()
             .ok_or(Error::Internal)?
@@ -271,11 +361,7 @@ impl Session {
             stream_event_listener,
             session_id,
             state: SessionState::Active,
-            frame_reader: FrameReader::new(),
             events,
-            send_streams: HashSet::default(),
-            recv_streams: HashSet::default(),
-            role,
             protocol,
         })
     }
@@ -439,34 +525,17 @@ impl Session {
 
     pub fn add_stream(&mut self, stream_id: StreamId) -> Res<()> {
         if self.state == SessionState::Active {
-            if stream_id.is_bidi() {
-                self.send_streams.insert(stream_id);
-                self.recv_streams.insert(stream_id);
-            } else if stream_id.is_self_initiated(self.role) {
-                self.send_streams.insert(stream_id);
-            } else {
-                self.recv_streams.insert(stream_id);
-            }
-
-            if !stream_id.is_self_initiated(self.role) {
-                self.events
-                    .extended_connect_new_stream(Http3StreamInfo::new(
-                        stream_id,
-                        self.protocol
-                            .connect_type()
-                            .get_stream_type(self.session_id),
-                    ))?;
-            }
+            self.protocol.add_stream(stream_id, &mut self.events)?;
         }
         Ok(())
     }
 
     pub fn remove_recv_stream(&mut self, stream_id: StreamId) {
-        self.recv_streams.remove(&stream_id);
+        self.protocol.remove_recv_stream(stream_id);
     }
 
     pub fn remove_send_stream(&mut self, stream_id: StreamId) {
-        self.send_streams.remove(&stream_id);
+        self.protocol.remove_send_stream(stream_id);
     }
 
     #[must_use]
@@ -475,73 +544,22 @@ impl Session {
     }
 
     pub fn take_sub_streams(&mut self) -> (HashSet<StreamId>, HashSet<StreamId>) {
-        (
-            mem::take(&mut self.recv_streams),
-            mem::take(&mut self.send_streams),
-        )
+        self.protocol.take_sub_streams()
     }
 
     /// # Errors
     ///
     /// It may return an error if the frame is not correctly decoded.
     pub fn read_control_stream(&mut self, conn: &mut Connection) -> Res<()> {
-        // Move into files
-        match &self.protocol {
-            Protocol::WebTransport(_) => {
-                let (f, fin) = self
-                    .frame_reader
-                    .receive::<WebTransportFrame>(&mut StreamReaderRecvStreamWrapper::new(
-                        conn,
-                        &mut self.control_stream_recv,
-                    ))
-                    .map_err(|_| Error::HttpGeneralProtocolStream)?;
-                qtrace!("[{self}] Received frame: {f:?} fin={fin}");
-                if let Some(WebTransportFrame::CloseSession { error, message }) = f {
-                    self.events.session_end(
-                        ExtendedConnectType::WebTransport,
-                        self.session_id,
-                        SessionCloseReason::Clean { error, message },
-                        None,
-                    );
-                    self.state = if fin {
-                        SessionState::Done
-                    } else {
-                        SessionState::FinPending
-                    };
-                } else if fin {
-                    self.events.session_end(
-                        ExtendedConnectType::WebTransport,
-                        self.session_id,
-                        SessionCloseReason::Clean {
-                            error: 0,
-                            message: String::new(),
-                        },
-                        None,
-                    );
-                    self.state = SessionState::Done;
-                }
-                Ok(())
-            }
-            Protocol::ConnectUdp(_) => {
-                qdebug!("[{self}]: read_control_stream");
-                // TODO
-                let mut buf = [0; 1500];
-                let (_, fin) = self.control_stream_recv.read_data(conn, buf.as_mut())?;
-                if fin {
-                    self.events.session_end(
-                        ExtendedConnectType::ConnectUdp,
-                        self.session_id,
-                        SessionCloseReason::Clean {
-                            error: 0,
-                            message: String::new(),
-                        },
-                        None,
-                    );
-                    self.state = SessionState::Done;
-                }
-                Ok(())
-            }
+        qdebug!("[{self}]: read_control_stream");
+        if let Some(new_state) = self.protocol.read_control_stream(
+            conn,
+            &mut self.events,
+            &mut self.control_stream_recv,
+        )? {
+            self.state = new_state;
         }
+        Ok(())
     }
 
     /// # Errors
@@ -549,40 +567,19 @@ impl Session {
     /// Return an error if the stream was closed on the transport layer, but that information is not
     /// yet consumed on the http/3 layer.
     pub fn close_session(&mut self, conn: &mut Connection, error: u32, message: &str) -> Res<()> {
+        qdebug!("[{self}]: close_session");
         self.state = SessionState::Done;
 
-        // TODO: Move to files
-        match &self.protocol {
-            Protocol::WebTransport(session) => {
-                let close_frame = WebTransportFrame::CloseSession {
-                    error,
-                    message: message.to_string(),
-                };
-                let mut encoder = Encoder::default();
-                close_frame.encode(&mut encoder);
-                self.control_stream_send
-                    .send_data_atomic(conn, encoder.as_ref())?;
-            }
-            Protocol::ConnectUdp(session) => {
-                qdebug!("[{self}]: close_session");
-                // TODO: WebTransport sends a message. needed here as well?
-
-                // TODO: WebTransport only does this on fin.
-                self.events.session_end(
-                    ExtendedConnectType::ConnectUdp,
-                    self.session_id,
-                    SessionCloseReason::Clean {
-                        error,
-                        message: message.to_string(),
-                    },
-                    None,
-                );
-            }
+        if let Some(close_frame) = self.protocol.close_frame(error, message) {
+            self.control_stream_send
+                .send_data_atomic(conn, close_frame.as_ref())?;
         }
 
         self.control_stream_send.close(conn)?;
         self.state = if self.control_stream_send.done() {
-            // TODO: In this case, don't we have to call self.events.session_end?
+            // TODO: In this case, don't we have to call
+            // self.events.session_end? Or does the caller of close_session not
+            // expect an event, as they already know it is now closed?
             SessionState::Done
         } else {
             SessionState::FinPending
@@ -607,15 +604,7 @@ impl Session {
         if self.state == SessionState::Active {
             let mut dgram_data = Encoder::default();
             dgram_data.encode_varint(self.session_id.as_u64() / 4);
-
-            // TODO: Move into connect-udp
-            match &self.protocol {
-                Protocol::WebTransport(web_transport_session) => {}
-                Protocol::ConnectUdp(connect_udp_session) => {
-                    dgram_data.encode_varint(0u64);
-                }
-            }
-
+            self.protocol.write_datagram_prefix(&mut dgram_data);
             dgram_data.encode(buf);
             conn.send_datagram(dgram_data.into(), id)?;
         } else {
@@ -626,13 +615,8 @@ impl Session {
     }
 
     pub fn datagram(&self, datagram: &[u8]) {
-        let datagram = match &self.protocol {
-            Protocol::WebTransport(_) => datagram,
-            // TODO: Safe?
-            // TODO: move into connect-udp
-            Protocol::ConnectUdp(_) => &datagram[1..],
-        };
         if self.state == SessionState::Active {
+            let datagram = self.protocol.read_datagram_prefix(datagram);
             self.events.new_datagram(
                 self.session_id,
                 datagram.to_vec(),

@@ -4644,7 +4644,7 @@ dependencies = [
 [[package]]
 name = "neqo-bin"
 version = "0.14.1"
-source = "git+https://github.com/mxinden/neqo?branch=connect-udp#bae9de99a08b1f9b7f47039b7954fe5fed87b4b2"
+source = "git+https://github.com/mxinden/neqo?branch=connect-udp#7601f092d9623bccc792f0ce163e2eeb00ddb4a8"
 dependencies = [
  "clap",
  "clap-verbosity-flag",
@@ -4667,7 +4667,7 @@ dependencies = [
 [[package]]
 name = "neqo-common"
 version = "0.14.1"
-source = "git+https://github.com/mxinden/neqo?branch=connect-udp#bae9de99a08b1f9b7f47039b7954fe5fed87b4b2"
+source = "git+https://github.com/mxinden/neqo?branch=connect-udp#7601f092d9623bccc792f0ce163e2eeb00ddb4a8"
 dependencies = [
  "enum-map",
  "env_logger",
@@ -4680,7 +4680,7 @@ dependencies = [
 [[package]]
 name = "neqo-crypto"
 version = "0.14.1"
-source = "git+https://github.com/mxinden/neqo?branch=connect-udp#bae9de99a08b1f9b7f47039b7954fe5fed87b4b2"
+source = "git+https://github.com/mxinden/neqo?branch=connect-udp#7601f092d9623bccc792f0ce163e2eeb00ddb4a8"
 dependencies = [
  "bindgen",
  "enum-map",
@@ -4697,7 +4697,7 @@ dependencies = [
 [[package]]
 name = "neqo-http3"
 version = "0.14.1"
-source = "git+https://github.com/mxinden/neqo?branch=connect-udp#bae9de99a08b1f9b7f47039b7954fe5fed87b4b2"
+source = "git+https://github.com/mxinden/neqo?branch=connect-udp#7601f092d9623bccc792f0ce163e2eeb00ddb4a8"
 dependencies = [
  "enumset",
  "log",
@@ -4715,7 +4715,7 @@ dependencies = [
 [[package]]
 name = "neqo-qpack"
 version = "0.14.1"
-source = "git+https://github.com/mxinden/neqo?branch=connect-udp#bae9de99a08b1f9b7f47039b7954fe5fed87b4b2"
+source = "git+https://github.com/mxinden/neqo?branch=connect-udp#7601f092d9623bccc792f0ce163e2eeb00ddb4a8"
 dependencies = [
  "log",
  "neqo-common",
@@ -4728,7 +4728,7 @@ dependencies = [
 [[package]]
 name = "neqo-transport"
 version = "0.14.1"
-source = "git+https://github.com/mxinden/neqo?branch=connect-udp#bae9de99a08b1f9b7f47039b7954fe5fed87b4b2"
+source = "git+https://github.com/mxinden/neqo?branch=connect-udp#7601f092d9623bccc792f0ce163e2eeb00ddb4a8"
 dependencies = [
  "enum-map",
  "enumset",
@@ -4747,7 +4747,7 @@ dependencies = [
 [[package]]
 name = "neqo-udp"
 version = "0.14.1"
-source = "git+https://github.com/mxinden/neqo?branch=connect-udp#bae9de99a08b1f9b7f47039b7954fe5fed87b4b2"
+source = "git+https://github.com/mxinden/neqo?branch=connect-udp#7601f092d9623bccc792f0ce163e2eeb00ddb4a8"
 dependencies = [
  "cfg_aliases",
  "libc",
