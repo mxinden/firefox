@@ -752,6 +752,7 @@ struct Http3ProxyServer {
     requests: HashMap<Http3OrWebTransportStream, (Vec<Header>, Vec<u8>)>,
     #[cfg(not(target_os = "android"))]
     response_to_send: HashMap<Http3OrWebTransportStream, Receiver<(Vec<Header>, Vec<u8>)>>,
+    tcp_stream: Option<tokio::net::TcpStream>,
 }
 
 impl ::std::fmt::Display for Http3ProxyServer {
@@ -769,6 +770,7 @@ impl Http3ProxyServer {
             requests: HashMap::new(),
             #[cfg(not(target_os = "android"))]
             response_to_send: HashMap::new(),
+            tcp_stream: None,
         }
     }
 
@@ -946,6 +948,13 @@ impl Http3ProxyServer {
             }
         }
     }
+
+    fn poll(self: &mut Self, cx: &mut Context<'_>) -> Poll<()> {
+        let stream = self.tcp_stream.as_mut() else {
+            return Poll::Pending;
+        };
+        stream.poll_read(cx)
+    }
 }
 
 impl HttpServer for Http3ProxyServer {
@@ -1004,6 +1013,16 @@ impl HttpServer for Http3ProxyServer {
                                         }
                                     }
                                 }
+                                "CONNECT" => {
+                                    let host_hdr =
+                                        headers.iter().find(|&h| h.name() == ":authority").unwrap();
+                                    assert_eq!(self.tcp_stream, None);
+                                    let stream =
+                                        std::net::TcpStream::connect(host_hdr.value()).unwrap();
+                                    self.tcp_stream =
+                                        Some(tokio::net::TcpStream::from_std(stream)).unwrap();
+                                    self.requests.insert(stream, (headers, Vec::new()));
+                                }
                                 _ => {
                                     self.fetch(stream, &headers, b"".to_vec());
                                 }
@@ -1042,8 +1061,22 @@ impl HttpServer for Http3ProxyServer {
                     mut data,
                     fin,
                 } => {
-                    if let Some((_, body)) = self.requests.get_mut(&stream) {
-                        body.append(&mut data);
+                    if let Some((headers, body)) = self.requests.get_mut(&stream) {
+                        if headers
+                            .iter()
+                            .find(|&h| h.name() == ":method")
+                            .unwrap()
+                            .value()
+                            == "CONNECT"
+                        {
+                            self.tcp_stream
+                                .as_mut()
+                                .unwrap()
+                                .try_write(data)
+                                .expect("TODO: Handle not writable");
+                        } else {
+                            body.append(&mut data);
+                        }
                     }
                     if fin {
                         if let Some((headers, body)) = self.requests.remove(&stream) {
@@ -1051,7 +1084,30 @@ impl HttpServer for Http3ProxyServer {
                         }
                     }
                 }
-                Http3ServerEvent::DataWritable { stream } => self.handle_stream_writable(stream),
+                Http3ServerEvent::DataWritable { stream } => {
+                    if let Some((headers, body)) = self.requests.get_mut(&stream) {
+                        if headers
+                            .iter()
+                            .find(|&h| h.name() == ":method")
+                            .unwrap()
+                            .value()
+                            == "CONNECT"
+                        {
+                            let mut buf = vec![0; 4096];
+                            let read = self
+                                .tcp_stream
+                                .as_mut()
+                                .unwrap()
+                                .try_read(&mut buf)
+                                .expect("TODO: Handle not readable. TODO: Ignore WouldBlock.");
+
+                            stream.send_data(buf[..read]).expect("TODO");
+                            return;
+                        }
+                    }
+
+                    self.handle_stream_writable(stream)
+                }
                 Http3ServerEvent::StateChange { .. } | Http3ServerEvent::PriorityUpdate { .. } => {}
                 Http3ServerEvent::StreamReset { stream, error } => {
                     qtrace!("Http3ServerEvent::StreamReset {:?} {:?}", stream, error);
