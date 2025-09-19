@@ -1055,7 +1055,7 @@ pub extern "C" fn neqo_http3conn_process_output_and_send(
                         }
                     }
                     Err(e) => {
-                        qwarn!("failed to send datagram: {}", e);
+                        panic!("failed to send datagram ({:?}, {:?}, {}, {}, {:?}), max_gso_segments {}: {}", dg.source(), dg.destination(), dg.datagram_size(), dg.num_datagrams(), dg.tos(), max_gso_segments, e);
                         return ProcessOutputAndSendResult {
                             result: into_nsresult(&e),
                             bytes_written: 0,
