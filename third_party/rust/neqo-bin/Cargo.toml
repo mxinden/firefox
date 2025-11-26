@@ -106,6 +106,10 @@ version = "0.4"
 features = ["std"]
 default-features = false
 
+[dependencies.libc]
+version = "0.2"
+default-features = false
+
 [dependencies.log]
 version = "0.4"
 default-features = false

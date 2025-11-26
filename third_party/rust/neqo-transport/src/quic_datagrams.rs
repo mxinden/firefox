@@ -11,11 +11,10 @@ use std::{cmp::min, collections::VecDeque};
 use neqo_common::{qdebug, Buffer, Encoder};
 
 use crate::{
-    events::OutgoingDatagramOutcome, frame::FrameType, packet, recovery, ConnectionEvents, Error,
-    Res, Stats,
+    events::OutgoingDatagramOutcome,
+    frame::{FrameEncoder as _, FrameType},
+    packet, recovery, ConnectionEvents, Error, Res, Stats,
 };
-
-pub const MAX_QUIC_DATAGRAM: u64 = 65535;
 
 /// Length of a [`FrameType::Datagram`] or [`FrameType::DatagramWithLen`] in
 /// QUIC varint encoding.
@@ -41,12 +40,14 @@ impl From<Option<u64>> for DatagramTracking {
     }
 }
 
-struct QuicDatagram {
+pub struct QuicDatagram {
     data: Vec<u8>,
     tracking: DatagramTracking,
 }
 
 impl QuicDatagram {
+    pub const MAX_SIZE: u64 = 65535;
+
     const fn tracking(&self) -> &DatagramTracking {
         &self.tracking
     }
@@ -64,9 +65,6 @@ pub struct QuicDatagrams {
     /// The max size of a datagram that would be acceptable by the peer.
     remote_datagram_size: u64,
     max_queued_outgoing_datagrams: usize,
-    /// The max number of datagrams that will be queued in connection events.
-    /// If the number is exceeded, the oldest datagram will be dropped.
-    max_queued_incoming_datagrams: usize,
     /// Datagram queued for sending.
     datagrams: VecDeque<QuicDatagram>,
     conn_events: ConnectionEvents,
@@ -76,14 +74,12 @@ impl QuicDatagrams {
     pub fn new(
         local_datagram_size: u64,
         max_queued_outgoing_datagrams: usize,
-        max_queued_incoming_datagrams: usize,
         conn_events: ConnectionEvents,
     ) -> Self {
         Self {
             local_datagram_size,
             remote_datagram_size: 0,
             max_queued_outgoing_datagrams,
-            max_queued_incoming_datagrams,
             datagrams: VecDeque::with_capacity(max_queued_outgoing_datagrams),
             conn_events,
         }
@@ -94,7 +90,7 @@ impl QuicDatagrams {
     }
 
     pub fn set_remote_datagram_size(&mut self, v: u64) {
-        self.remote_datagram_size = min(v, MAX_QUIC_DATAGRAM);
+        self.remote_datagram_size = min(v, QuicDatagram::MAX_SIZE);
     }
 
     /// This function tries to write a datagram frame into a packet. If the
@@ -119,11 +115,13 @@ impl QuicDatagrams {
                         + len
                         + packet::Builder::MINIMUM_FRAME_SIZE
                 {
-                    builder.encode_varint(FrameType::DatagramWithLen);
-                    builder.encode_vvec(dgram.as_ref());
+                    builder.encode_frame(FrameType::DatagramWithLen, |b| {
+                        b.encode_vvec(dgram.as_ref());
+                    });
                 } else {
-                    builder.encode_varint(FrameType::Datagram);
-                    builder.encode(dgram.as_ref());
+                    builder.encode_frame(FrameType::Datagram, |b| {
+                        b.encode(dgram.as_ref());
+                    });
                     builder.mark_full();
                 }
                 debug_assert!(builder.len() <= builder.limit());
@@ -183,12 +181,11 @@ impl QuicDatagrams {
         Ok(())
     }
 
-    pub fn handle_datagram(&self, data: &[u8], stats: &mut Stats) -> Res<()> {
+    pub fn handle_datagram(&self, data: &[u8]) -> Res<()> {
         if self.local_datagram_size < u64::try_from(data.len())? {
             return Err(Error::ProtocolViolation);
         }
-        self.conn_events
-            .add_datagram(self.max_queued_incoming_datagrams, data, stats);
+        self.conn_events.add_datagram(data);
         Ok(())
     }
 }

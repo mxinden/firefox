@@ -76,8 +76,6 @@ pub const INITIAL_LOCAL_MAX_DATA: u64 = INITIAL_LOCAL_MAX_STREAM_DATA as u64 * C
 /// - 40ms rtt and 2.1 GBit/s
 /// - 100ms rtt and 0.8 GBit/s
 ///
-/// Keep in sync with [`crate::send_stream::MAX_SEND_BUFFER_SIZE`].
-///
 /// See also <https://datatracker.ietf.org/doc/html/rfc9000#name-max_stream_data-frames>.
 pub const MAX_LOCAL_MAX_STREAM_DATA: u64 = 10 * 1024 * 1024;
 /// Limit for the maximum amount of bytes active on the connection, i.e. limit
@@ -136,7 +134,6 @@ pub struct ConnectionParameters {
     preferred_address: PreferredAddressConfig,
     datagram_size: u64,
     outgoing_datagram_queue: usize,
-    incoming_datagram_queue: usize,
     initial_rtt: Duration,
     fast_pto: u8,
     grease: bool,
@@ -173,7 +170,6 @@ impl Default for ConnectionParameters {
             preferred_address: PreferredAddressConfig::Default,
             datagram_size: MAX_DATAGRAM_FRAME_SIZE,
             outgoing_datagram_queue: MAX_QUEUED_DATAGRAMS_DEFAULT,
-            incoming_datagram_queue: MAX_QUEUED_DATAGRAMS_DEFAULT,
             initial_rtt: DEFAULT_INITIAL_RTT,
             fast_pto: FAST_PTO_SCALE,
             grease: true,
@@ -365,18 +361,6 @@ impl ConnectionParameters {
     pub fn outgoing_datagram_queue(mut self, v: usize) -> Self {
         // The max queue length must be at least 1.
         self.outgoing_datagram_queue = max(v, 1);
-        self
-    }
-
-    #[must_use]
-    pub const fn get_incoming_datagram_queue(&self) -> usize {
-        self.incoming_datagram_queue
-    }
-
-    #[must_use]
-    pub fn incoming_datagram_queue(mut self, v: usize) -> Self {
-        // The max queue length must be at least 1.
-        self.incoming_datagram_queue = max(v, 1);
         self
     }
 

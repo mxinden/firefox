@@ -4765,7 +4765,7 @@ dependencies = [
 [[package]]
 name = "mtu"
 version = "0.2.9"
-source = "git+https://github.com/mozilla/neqo?tag=v0.19.0#3dbba8ffc2b3c78713161d1925b2858bd2098548"
+source = "git+https://github.com/mxinden/neqo?branch=inbound-quic-datagram-limit#f56184809aaaf6dc492e0ea080cac844ec0891e3"
 dependencies = [
  "bindgen 0.72.0",
  "cfg_aliases",
@@ -4810,12 +4810,13 @@ dependencies = [
 [[package]]
 name = "neqo-bin"
 version = "0.19.0"
-source = "git+https://github.com/mozilla/neqo?tag=v0.19.0#3dbba8ffc2b3c78713161d1925b2858bd2098548"
+source = "git+https://github.com/mxinden/neqo?branch=inbound-quic-datagram-limit#f56184809aaaf6dc492e0ea080cac844ec0891e3"
 dependencies = [
  "clap",
  "clap-verbosity-flag",
  "futures",
  "hex",
+ "libc",
  "log",
  "neqo-common",
  "neqo-crypto",
@@ -4834,7 +4835,7 @@ dependencies = [
 [[package]]
 name = "neqo-common"
 version = "0.19.0"
-source = "git+https://github.com/mozilla/neqo?tag=v0.19.0#3dbba8ffc2b3c78713161d1925b2858bd2098548"
+source = "git+https://github.com/mxinden/neqo?branch=inbound-quic-datagram-limit#f56184809aaaf6dc492e0ea080cac844ec0891e3"
 dependencies = [
  "enum-map",
  "env_logger",
@@ -4848,7 +4849,7 @@ dependencies = [
 [[package]]
 name = "neqo-crypto"
 version = "0.19.0"
-source = "git+https://github.com/mozilla/neqo?tag=v0.19.0#3dbba8ffc2b3c78713161d1925b2858bd2098548"
+source = "git+https://github.com/mxinden/neqo?branch=inbound-quic-datagram-limit#f56184809aaaf6dc492e0ea080cac844ec0891e3"
 dependencies = [
  "bindgen 0.72.0",
  "enum-map",
@@ -4867,7 +4868,7 @@ dependencies = [
 [[package]]
 name = "neqo-http3"
 version = "0.19.0"
-source = "git+https://github.com/mozilla/neqo?tag=v0.19.0#3dbba8ffc2b3c78713161d1925b2858bd2098548"
+source = "git+https://github.com/mxinden/neqo?branch=inbound-quic-datagram-limit#f56184809aaaf6dc492e0ea080cac844ec0891e3"
 dependencies = [
  "enumset",
  "log",
@@ -4886,7 +4887,7 @@ dependencies = [
 [[package]]
 name = "neqo-qpack"
 version = "0.19.0"
-source = "git+https://github.com/mozilla/neqo?tag=v0.19.0#3dbba8ffc2b3c78713161d1925b2858bd2098548"
+source = "git+https://github.com/mxinden/neqo?branch=inbound-quic-datagram-limit#f56184809aaaf6dc492e0ea080cac844ec0891e3"
 dependencies = [
  "log",
  "neqo-common",
@@ -4900,7 +4901,7 @@ dependencies = [
 [[package]]
 name = "neqo-transport"
 version = "0.19.0"
-source = "git+https://github.com/mozilla/neqo?tag=v0.19.0#3dbba8ffc2b3c78713161d1925b2858bd2098548"
+source = "git+https://github.com/mxinden/neqo?branch=inbound-quic-datagram-limit#f56184809aaaf6dc492e0ea080cac844ec0891e3"
 dependencies = [
  "enum-map",
  "enumset",
@@ -4920,7 +4921,7 @@ dependencies = [
 [[package]]
 name = "neqo-udp"
 version = "0.19.0"
-source = "git+https://github.com/mozilla/neqo?tag=v0.19.0#3dbba8ffc2b3c78713161d1925b2858bd2098548"
+source = "git+https://github.com/mxinden/neqo?branch=inbound-quic-datagram-limit#f56184809aaaf6dc492e0ea080cac844ec0891e3"
 dependencies = [
  "cfg_aliases",
  "libc",
