@@ -198,6 +198,10 @@ class NeqoHttp3Conn final {
                                                          aResult);
   }
 
+  void DatagramSendQueueCapacity(uint64_t* aResult) {
+    return neqo_http3conn_datagram_send_queue_capacity(this, aResult);
+  }
+
   nsresult WebTransportSetSendOrder(uint64_t aSessionId,
                                     Maybe<int64_t> aSendOrder) {
     return neqo_http3conn_webtransport_set_sendorder(this, aSessionId,

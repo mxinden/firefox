@@ -11,6 +11,9 @@ use neqo_crypto::Error as CryptoError;
 use thiserror::Error;
 
 mod ackrate;
+#[cfg(fuzzing)]
+pub mod addr_valid;
+#[cfg(not(fuzzing))]
 mod addr_valid;
 mod cc;
 mod cid;
@@ -70,7 +73,7 @@ pub use self::{
         },
         Connection, Output, OutputBatch, State, ZeroRttState,
     },
-    events::{ConnectionEvent, ConnectionEvents},
+    events::{ConnectionEvent, ConnectionEvents, OutgoingDatagramOutcome},
     frame::CloseError,
     packet::MIN_INITIAL_PACKET_SIZE,
     pmtud::Pmtud,

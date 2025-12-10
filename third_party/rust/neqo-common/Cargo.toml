@@ -41,7 +41,6 @@ repository = "https://github.com/mozilla/neqo/"
 
 [features]
 bench = [
-    "neqo-crypto/bench",
     "test-fixture/bench",
     "log/release_max_level_info",
 ]
@@ -106,9 +105,6 @@ default-features = false
 version = "4"
 default-features = false
 package = "codspeed-criterion-compat"
-
-[dev-dependencies.neqo-crypto]
-path = "../neqo-crypto"
 
 [dev-dependencies.regex]
 version = "1.9"

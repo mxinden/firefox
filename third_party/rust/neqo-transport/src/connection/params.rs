@@ -122,6 +122,13 @@ pub struct ConnectionParameters {
     max_streams_bidi: u64,
     /// Initial limit on unidirectional streams that this endpoint creates.
     max_streams_uni: u64,
+    /// > The maximum UDP payload size parameter is an integer value that limits
+    /// > the size of UDP payloads that the endpoint is willing to receive. UDP
+    /// > datagrams with payloads larger than this limit are not likely to be
+    /// > processed by the receiver.
+    ///
+    /// <https://www.rfc-editor.org/rfc/rfc9000.html#section-18.2>
+    max_udp_payload_size: Option<u64>,
     /// The ACK ratio determines how many acknowledgements we will request as a
     /// fraction of both the current congestion window (expressed in packets) and
     /// as a fraction of the current round trip time.  This value is scaled by
@@ -134,7 +141,6 @@ pub struct ConnectionParameters {
     preferred_address: PreferredAddressConfig,
     datagram_size: u64,
     outgoing_datagram_queue: usize,
-    incoming_datagram_queue: usize,
     initial_rtt: Duration,
     fast_pto: u8,
     grease: bool,
@@ -166,12 +172,12 @@ impl Default for ConnectionParameters {
                 .expect("usize fits in u64"),
             max_streams_bidi: LOCAL_STREAM_LIMIT_BIDI,
             max_streams_uni: LOCAL_STREAM_LIMIT_UNI,
+            max_udp_payload_size: None,
             ack_ratio: Self::DEFAULT_ACK_RATIO,
             idle_timeout: Self::DEFAULT_IDLE_TIMEOUT,
             preferred_address: PreferredAddressConfig::Default,
             datagram_size: MAX_DATAGRAM_FRAME_SIZE,
             outgoing_datagram_queue: MAX_QUEUED_DATAGRAMS_DEFAULT,
-            incoming_datagram_queue: MAX_QUEUED_DATAGRAMS_DEFAULT,
             initial_rtt: DEFAULT_INITIAL_RTT,
             fast_pto: FAST_PTO_SCALE,
             grease: true,
@@ -287,6 +293,18 @@ impl ConnectionParameters {
         self
     }
 
+    /// > The maximum UDP payload size parameter is an integer value that limits
+    /// > the size of UDP payloads that the endpoint is willing to receive. UDP
+    /// > datagrams with payloads larger than this limit are not likely to be
+    /// > processed by the receiver.
+    ///
+    /// <https://www.rfc-editor.org/rfc/rfc9000.html#section-18.2>
+    #[must_use]
+    pub const fn max_udp_payload_size(mut self, v: u64) -> Self {
+        self.max_udp_payload_size = Some(v);
+        self
+    }
+
     /// Set a preferred address (which only has an effect for a server).
     #[must_use]
     pub const fn preferred_address(mut self, preferred: PreferredAddress) -> Self {
@@ -363,18 +381,6 @@ impl ConnectionParameters {
     pub fn outgoing_datagram_queue(mut self, v: usize) -> Self {
         // The max queue length must be at least 1.
         self.outgoing_datagram_queue = max(v, 1);
-        self
-    }
-
-    #[must_use]
-    pub const fn get_incoming_datagram_queue(&self) -> usize {
-        self.incoming_datagram_queue
-    }
-
-    #[must_use]
-    pub fn incoming_datagram_queue(mut self, v: usize) -> Self {
-        // The max queue length must be at least 1.
-        self.incoming_datagram_queue = max(v, 1);
         self
     }
 
@@ -533,6 +539,12 @@ impl ConnectionParameters {
             .set_integer(InitialMaxStreamsBidi, self.max_streams_bidi);
         tps.local_mut()
             .set_integer(InitialMaxStreamsUni, self.max_streams_uni);
+        if let Some(max_udp_payload_size) = self.max_udp_payload_size {
+            tps.local_mut().set_integer(
+                TransportParameterId::MaxUdpPayloadSize,
+                max_udp_payload_size,
+            );
+        }
         tps.local_mut().set_integer(
             TransportParameterId::IdleTimeout,
             u64::try_from(self.idle_timeout.as_millis()).unwrap_or(0),

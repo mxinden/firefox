@@ -429,7 +429,7 @@ impl NeqoHttp3Conn {
             // transmitted UDP datagrams might get fragmented by the IP layer.
             && socket.as_ref().map_or(false, |s| !s.may_fragment());
 
-        let params = ConnectionParameters::default()
+        let mut params = ConnectionParameters::default()
             .versions(quic_version, version_list)
             .cc_algorithm(cc_algorithm)
             .max_data(max_data)
@@ -442,6 +442,12 @@ impl NeqoHttp3Conn {
             // MLKEM support is configured further below. By default, disable it.
             .mlkem(false)
             .pmtud(pmtud_enabled);
+
+        // TODO: Using socket as an indicator whether this is a MASQUE inner
+        // connection is a hack.
+        if socket.is_none() {
+            params = params.max_udp_payload_size(1232);
+        }
 
         // Set a short timeout when fuzzing.
         #[cfg(feature = "fuzzing")]
@@ -1805,6 +1811,7 @@ pub enum Http3Event {
     EchFallbackAuthenticationNeeded,
     WebTransport(WebTransportEventExternal),
     ConnectUdp(ConnectUdpEventExternal),
+    OutgoingDatagramOutcomeSent,
     NoEvent,
 }
 
@@ -1999,6 +2006,12 @@ pub extern "C" fn neqo_http3conn_event(
             Http3ClientEvent::ConnectUdp(e) => {
                 Http3Event::ConnectUdp(ConnectUdpEventExternal::new(e, data))
             }
+            Http3ClientEvent::OutgoingDatagramOutcome {
+                // TODO: fix import
+                // TODO: Should we also emit DroppedTooBig?
+                outcome: neqo_transport::OutgoingDatagramOutcome::Sent,
+            } => Http3Event::OutgoingDatagramOutcomeSent,
+            Http3ClientEvent::OutgoingDatagramOutcome { .. } => Http3Event::NoEvent,
         };
 
         if !matches!(fe, Http3Event::NoEvent) {
@@ -2390,6 +2403,17 @@ pub extern "C" fn neqo_http3conn_webtransport_max_datagram_size(
             NS_OK
         })
 }
+
+#[no_mangle]
+pub extern "C" fn neqo_http3conn_datagram_send_queue_capacity(
+    conn: &mut NeqoHttp3Conn,
+    result: &mut u64,
+) {
+    // TODO: handle cast
+    *result = conn.conn.datagram_send_queue_capacity() as u64;
+}
+
+
 
 /// # Safety
 ///
