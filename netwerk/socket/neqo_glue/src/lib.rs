@@ -790,6 +790,15 @@ pub extern "C" fn neqo_http3conn_new(
     ) {
         Ok(http3_conn) => {
             http3_conn.forget(result);
+
+            // TODO: Best place?
+            gecko_profiler::auto_profiler_flow_marker!(
+                "neqo_http3conn_new",
+                gecko_profiler::gecko_profiler_category!(Network),
+                Default::default(),
+                gecko_profiler::FlowStackMarker::from_pointer(result)
+            );
+
             NS_OK
         }
         Err(e) => e,
@@ -885,27 +894,44 @@ pub struct ProcessInputResult {
 pub unsafe extern "C" fn neqo_http3conn_process_input(
     conn: &mut NeqoHttp3Conn,
 ) -> ProcessInputResult {
+    let flow = gecko_profiler::FlowStackMarker::from_pointer(conn);
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_process_input",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        flow
+    );
+
     let mut bytes_read = 0;
 
     RECV_BUF.with_borrow_mut(|recv_buf| {
         loop {
-            let dgrams = match conn
-                .socket
-                .as_mut()
-                .expect("non NSPR IO")
-                .recv(conn.local_addr, recv_buf)
-            {
-                Ok(dgrams) => dgrams,
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                    conn.increment_would_block_rx();
-                    break;
-                }
-                Err(e) => {
-                    qwarn!("failed to receive datagrams: {}", e);
-                    return ProcessInputResult {
-                        result: into_nsresult(&e),
-                        bytes_read: 0,
-                    };
+            let dgrams = {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "recv",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    flow
+                );
+
+                match conn
+                    .socket
+                    .as_mut()
+                    .expect("non NSPR IO")
+                    .recv(conn.local_addr, recv_buf)
+                {
+                    Ok(dgrams) => dgrams,
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        conn.increment_would_block_rx();
+                        break;
+                    }
+                    Err(e) => {
+                        qwarn!("failed to receive datagrams: {}", e);
+                        return ProcessInputResult {
+                            result: into_nsresult(&e),
+                            bytes_read: 0,
+                        };
+                    }
                 }
             };
 
@@ -928,7 +954,15 @@ pub unsafe extern "C" fn neqo_http3conn_process_input(
                 d
             });
 
-            conn.conn.process_multiple_input(dgrams, Instant::now());
+            {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "process_multiple_input",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    flow
+                );
+                conn.conn.process_multiple_input(dgrams, Instant::now());
+            }
 
             conn.datagram_size_received.accumulate(sum as u64);
             conn.datagram_segments_received.accumulate(segment_count);
@@ -1014,6 +1048,13 @@ pub extern "C" fn neqo_http3conn_process_output_and_send(
     context: *mut c_void,
     set_timer_func: SetTimerFunc,
 ) -> ProcessOutputAndSendResult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_process_output_and_send",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     let mut bytes_written: usize = 0;
     loop {
         let Ok(max_gso_segments) = min(
@@ -1038,6 +1079,13 @@ pub extern "C" fn neqo_http3conn_process_output_and_send(
             .take()
             .map(OutputBatch::DatagramBatch)
             .unwrap_or_else(|| {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "process_multiple_output",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
                 conn.conn
                     .process_multiple_output(Instant::now(), max_gso_segments)
             });
@@ -1056,6 +1104,13 @@ pub extern "C" fn neqo_http3conn_process_output_and_send(
                         bytes_written: 0,
                     };
                 }
+
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "send",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
 
                 match conn.socket.as_mut().expect("non NSPR IO").send(&dg) {
                     Ok(()) => {}
@@ -1139,6 +1194,13 @@ pub extern "C" fn neqo_http3conn_process_output_and_send(
 
 #[no_mangle]
 pub extern "C" fn neqo_http3conn_close(conn: &mut NeqoHttp3Conn, error: u64) {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_close",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     conn.conn.close(Instant::now(), error, "");
 }
 
@@ -1229,6 +1291,13 @@ pub extern "C" fn neqo_http3conn_fetch(
     urgency: u8,
     incremental: bool,
 ) -> nsresult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_fetch",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     let hdrs = match parse_headers(headers) {
         Err(e) => {
             return e;
@@ -1276,6 +1345,13 @@ pub extern "C" fn neqo_http3conn_connect(
     urgency: u8,
     incremental: bool,
 ) -> nsresult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_connect",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     let hdrs = match parse_headers(headers) {
         Err(e) => {
             return e;
@@ -1306,6 +1382,13 @@ pub extern "C" fn neqo_http3conn_priority_update(
     urgency: u8,
     incremental: bool,
 ) -> nsresult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_priority_update",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     if urgency >= 8 {
         return NS_ERROR_INVALID_ARG;
     }
@@ -1330,6 +1413,13 @@ pub unsafe extern "C" fn neqo_htttp3conn_send_request_body(
     len: u32,
     read: &mut u32,
 ) -> nsresult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_htttp3conn_send_request_body",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     let array = slice::from_raw_parts(buf, len as usize);
     conn.conn
         .send_data(StreamId::from(stream_id), array, Instant::now())
@@ -1527,6 +1617,13 @@ pub extern "C" fn neqo_http3conn_cancel_fetch(
     stream_id: u64,
     error: u64,
 ) -> nsresult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_cancel_fetch",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     match conn.conn.cancel_fetch(StreamId::from(stream_id), error) {
         Ok(()) => NS_OK,
         Err(_) => NS_ERROR_INVALID_ARG,
@@ -1540,6 +1637,13 @@ pub extern "C" fn neqo_http3conn_reset_stream(
     stream_id: u64,
     error: u64,
 ) -> nsresult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_reset_stream",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     match conn
         .conn
         .stream_reset_send(StreamId::from(stream_id), error)
@@ -1555,6 +1659,13 @@ pub extern "C" fn neqo_http3conn_stream_stop_sending(
     stream_id: u64,
     error: u64,
 ) -> nsresult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_stream_stop_sending",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     match conn
         .conn
         .stream_stop_sending(StreamId::from(stream_id), error)
@@ -1570,6 +1681,13 @@ pub extern "C" fn neqo_http3conn_close_stream(
     conn: &mut NeqoHttp3Conn,
     stream_id: u64,
 ) -> nsresult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_close_stream",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     match conn
         .conn
         .stream_close_send(StreamId::from(stream_id), Instant::now())
@@ -1849,6 +1967,13 @@ pub extern "C" fn neqo_http3conn_event(
     ret_event: &mut Http3Event,
     data: &mut ThinVec<u8>,
 ) -> nsresult {
+    gecko_profiler::auto_profiler_flow_marker!(
+        "neqo_http3conn_event",
+        gecko_profiler::gecko_profiler_category!(Network),
+        Default::default(),
+        gecko_profiler::FlowStackMarker::from_pointer(conn)
+    );
+
     while let Some(evt) = conn.conn.next_event() {
         let fe = match evt {
             Http3ClientEvent::DataWritable { stream_id } => Http3Event::DataWritable {
@@ -2025,6 +2150,14 @@ pub unsafe extern "C" fn neqo_http3conn_read_response_data(
     read: &mut u32,
     fin: &mut bool,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_read_response_data",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
+
     let array = slice::from_raw_parts_mut(buf, len as usize);
     match conn
         .conn
@@ -2067,6 +2200,14 @@ pub extern "C" fn neqo_http3conn_tls_info(
     conn: &mut NeqoHttp3Conn,
     sec_info: &mut NeqoSecretInfo,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_tls_info",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
+
     match conn.conn.tls_info() {
         Some(info) => {
             sec_info.set = true;
@@ -2098,6 +2239,14 @@ pub extern "C" fn neqo_http3conn_peer_certificate_info(
     conn: &mut NeqoHttp3Conn,
     neqo_certs_info: &mut NeqoCertificateInfo,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_peer_certificate_info",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
+
     let Some(certs_info) = conn.conn.peer_certificate() else {
         return NS_ERROR_NOT_AVAILABLE;
     };
@@ -2134,6 +2283,13 @@ pub extern "C" fn neqo_http3conn_peer_certificate_info(
 
 #[no_mangle]
 pub extern "C" fn neqo_http3conn_authenticated(conn: &mut NeqoHttp3Conn, error: PRErrorCode) {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_authenticated",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
     conn.conn.authenticated(error.into(), Instant::now());
 }
 
@@ -2142,6 +2298,13 @@ pub extern "C" fn neqo_http3conn_set_resumption_token(
     conn: &mut NeqoHttp3Conn,
     token: &mut ThinVec<u8>,
 ) {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_set_resumption_token",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
     _ = conn.conn.enable_resumption(Instant::now(), token);
 }
 
@@ -2150,11 +2313,25 @@ pub extern "C" fn neqo_http3conn_set_ech_config(
     conn: &mut NeqoHttp3Conn,
     ech_config: &mut ThinVec<u8>,
 ) {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_set_ech_config",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
     _ = conn.conn.enable_ech(ech_config);
 }
 
 #[no_mangle]
 pub extern "C" fn neqo_http3conn_is_zero_rtt(conn: &mut NeqoHttp3Conn) -> bool {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_is_zero_rtt",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
     conn.conn.state() == Http3State::ZeroRtt
 }
 
@@ -2189,6 +2366,14 @@ pub struct Http3Stats {
 
 #[no_mangle]
 pub extern "C" fn neqo_http3conn_get_stats(conn: &mut NeqoHttp3Conn, stats: &mut Http3Stats) {
+
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_get_stats",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
     let t_stats = conn.conn.transport_stats();
     stats.packets_rx = t_stats.packets_rx;
     stats.dups_rx = t_stats.dups_rx;
@@ -2211,6 +2396,14 @@ pub extern "C" fn neqo_http3conn_webtransport_create_session(
     headers: &nsACString,
     stream_id: &mut u64,
 ) -> nsresult {
+
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_webtransport_create_session",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
     let hdrs = match parse_headers(headers) {
         Err(e) => {
             return e;
@@ -2246,6 +2439,13 @@ pub extern "C" fn neqo_http3conn_connect_udp_create_session(
     headers: &nsACString,
     stream_id: &mut u64,
 ) -> nsresult {
+
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_connect_udp_create_session",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
     let hdrs = match parse_headers(headers) {
         Err(e) => {
             return e;
@@ -2279,6 +2479,14 @@ pub extern "C" fn neqo_http3conn_webtransport_close_session(
     error: u32,
     message: &nsACString,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_webtransport_close_session",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
+
     let Ok(message_tmp) = str::from_utf8(message) else {
         return NS_ERROR_INVALID_ARG;
     };
@@ -2300,6 +2508,15 @@ pub extern "C" fn neqo_http3conn_connect_udp_close_session(
     error: u32,
     message: &nsACString,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_connect_udp_close_session",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
+
+
     let Ok(message_tmp) = str::from_utf8(message) else {
         return NS_ERROR_INVALID_ARG;
     };
@@ -2321,6 +2538,13 @@ pub extern "C" fn neqo_http3conn_webtransport_create_stream(
     stream_type: WebTransportStreamType,
     stream_id: &mut u64,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_webtransport_create_stream",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
     match conn
         .conn
         .webtransport_create_stream(StreamId::from(session_id), stream_type.into())
@@ -2341,6 +2565,14 @@ pub extern "C" fn neqo_http3conn_webtransport_send_datagram(
     data: &mut ThinVec<u8>,
     tracking_id: u64,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_webtransport_send_datagram",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
+
     let id = if tracking_id == 0 {
         None
     } else {
@@ -2362,6 +2594,14 @@ pub extern "C" fn neqo_http3conn_connect_udp_send_datagram(
     data: &mut ThinVec<u8>,
     tracking_id: u64,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_connect_udp_send_datagram",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
+
     let id = if tracking_id == 0 {
         None
     } else {
@@ -2383,6 +2623,13 @@ pub extern "C" fn neqo_http3conn_webtransport_max_datagram_size(
     session_id: u64,
     result: &mut u64,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_webtransport_max_datagram_size",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
+
     conn.conn
         .webtransport_max_datagram_size(StreamId::from(session_id))
         .map_or(NS_ERROR_UNEXPECTED, |size| {
@@ -2400,6 +2647,12 @@ pub unsafe extern "C" fn neqo_http3conn_webtransport_set_sendorder(
     stream_id: u64,
     sendorder: *const i64,
 ) -> nsresult {
+                gecko_profiler::auto_profiler_flow_marker!(
+                    "neqo_http3conn_webtransport_set_sendorder",
+                    gecko_profiler::gecko_profiler_category!(Network),
+                    Default::default(),
+                    gecko_profiler::FlowStackMarker::from_pointer(conn)
+                );
     match conn
         .conn
         .webtransport_set_sendorder(StreamId::from(stream_id), sendorder.as_ref().copied())

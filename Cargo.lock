@@ -4937,6 +4937,7 @@ name = "neqo_glue"
 version = "0.1.0"
 dependencies = [
  "firefox-on-glean",
+ "gecko-profiler",
  "libc",
  "log",
  "neqo-common",
