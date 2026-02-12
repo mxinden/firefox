@@ -7,7 +7,7 @@ license = "MPL-2.0"
 description = "FFI glue layer between happy-eyeballs Rust crate and Firefox's C++ networking stack"
 
 [dependencies]
-happy-eyeballs = { branch = "master", git = "https://github.com/mxinden/happy-eyeballs" }
+happy-eyeballs = { branch = "main", git = "https://github.com/mozilla/happy-eyeballs" }
 # TODO: restrict?!
 tracing = "0.1"
 tracing-subscriber = { version = "=0.3.20", default-features = false, features = ["fmt", "std", "env-filter"] }

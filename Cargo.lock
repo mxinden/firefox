@@ -2935,7 +2935,7 @@ dependencies = [
 [[package]]
 name = "happy-eyeballs"
 version = "0.1.0"
-source = "git+https://github.com/mxinden/happy-eyeballs?branch=master#86aa3f87742a906cd46d629caa0e67f4251005b7"
+source = "git+https://github.com/mozilla/happy-eyeballs?branch=main#e5a4b71de58cce3b029387e9a29d1285800fc34b"
 dependencies = [
  "thiserror 2.0.12",
  "tracing",
