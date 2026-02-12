@@ -156,9 +156,11 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
 
   while (true) {
     HappyEyeballsEvent event{};
-    nsTArray<uint8_t> heData;
+    nsTArray<uint8_t> addrData;
+    nsTArray<uint8_t> echConfigData;
     rv = happy_eyeballs_process_output(
-        const_cast<HappyEyeballs*>(mHappyEyeballs), &event, &heData);
+        const_cast<HappyEyeballs*>(mHappyEyeballs), &event, &addrData,
+        &echConfigData);
     if (NS_FAILED(rv)) {
       LOG(("process_output failed rv=%x", static_cast<uint32_t>(rv)));
       return rv;
@@ -187,14 +189,10 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
       case HappyEyeballsEvent::Tag::AttemptConnection: {
         LOG(
             ("HappyEyeballsEvent::Tag::AttemptConnection protocol=%d port=%d "
-             "addr_len=%u ech_config_len=%u",
+             "addr_len=%zu ech_config_len=%zu",
              event.attempt_connection.protocol, event.attempt_connection.port,
-             event.attempt_connection.addr_len,
-             event.attempt_connection.ech_config_len));
+             addrData.Length(), echConfigData.Length()));
 
-        nsTArray<uint8_t> addrData;
-        addrData.AppendElements(heData.Elements(),
-                                event.attempt_connection.addr_len);
         auto res = ToNetAddr(addrData, event.attempt_connection.port);
         if (res.isErr()) {
           LOG(("Failed to convert to NetAddr"));
@@ -202,27 +200,20 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
           return res.unwrapErr();
         }
 
-        nsTArray<uint8_t> echConfig;
-        if (event.attempt_connection.ech_config_len > 0) {
-          echConfig.AppendElements(
-              heData.Elements() + event.attempt_connection.addr_len,
-              event.attempt_connection.ech_config_len);
-        }
-
         LOG(("connect to:[%s] ech_config_len=%zu",
-             res.unwrap().ToString().get(), echConfig.Length()));
+             res.unwrap().ToString().get(), echConfigData.Length()));
         if (event.attempt_connection.protocol == ConnectionAttemptProtocols::H3) {
           EstablishUDPConnection(res.unwrap(), event.attempt_connection.port,
-                                 std::move(echConfig));
+                                 std::move(echConfigData));
         } else {
           EstablishTCPConnection(res.unwrap(), event.attempt_connection.port,
-                                 std::move(echConfig));
+                                 std::move(echConfigData));
         }
         break;
       }
 
       case HappyEyeballsEvent::Tag::CancelConnection: {
-        auto res = ToNetAddr(heData, event.attempt_connection.port);
+        auto res = ToNetAddr(addrData, event.cancel_connection.port);
         if (res.isErr()) {
           LOG(("Failed to convert to NetAddr"));
           // TODO: how to handle this error?

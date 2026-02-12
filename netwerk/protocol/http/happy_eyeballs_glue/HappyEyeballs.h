@@ -19,8 +19,9 @@ class HappyEyeballsAPI final {
                        const nsACString& aOrigin, uint16_t aPort,
                        const nsTArray<AltSvc>* aAltSvc = nullptr) {
     nsTArray<AltSvc> emptyAltSvc;
+    const nsTArray<AltSvc>* altSvcPtr = aAltSvc ? aAltSvc : &emptyAltSvc;
     return happy_eyeballs_new((const HappyEyeballs**)aHappyEyeballs, &aOrigin,
-                              aPort, aAltSvc ? aAltSvc : &emptyAltSvc);
+                              aPort, altSvcPtr);
   }
 };
 
