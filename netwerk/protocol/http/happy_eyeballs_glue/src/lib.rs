@@ -245,15 +245,21 @@ pub extern "C" fn happy_eyeballs_new(
     result: &mut *const HappyEyeballs,
     origin: *const nsACString,
     port: u16,
-    alt_svc: &ThinVec<AltSvc>,
+    alt_svc: *const ThinVec<AltSvc>,
 ) -> nsresult {
     *result = ptr::null_mut();
 
-    if origin.is_null() {
+    let Some(origin) = (unsafe { origin.as_ref() }) else {
+        debug_assert!(false, "unexpected null origin pointer");
         return NS_ERROR_INVALID_ARG;
-    }
+    };
 
-    let origin_str = unsafe { (&*origin).to_utf8().to_string() };
+    let Some(alt_svc) = (unsafe { alt_svc.as_ref() }) else {
+        debug_assert!(false, "unexpected null alt_svc pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    let origin_str = origin.to_utf8().to_string();
 
     let alt_svc_vec: Vec<_> = alt_svc
         .iter()
@@ -404,51 +410,106 @@ pub enum Output {
 
 #[no_mangle]
 pub extern "C" fn happy_eyeballs_process_dns_response_a(
-    he: &mut HappyEyeballs,
+    he: *mut HappyEyeballs,
     id: u64,
-    addrs: &ThinVec<NetAddr>,
+    addrs: *const ThinVec<NetAddr>,
 ) -> nsresult {
+    let Some(he) = (unsafe { he.as_mut() }) else {
+        debug_assert!(false, "unexpected null he pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    let Some(addrs) = (unsafe { addrs.as_ref() }) else {
+        debug_assert!(false, "unexpected null addrs pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
     he.process_dns_response_a(id, addrs)
 }
 
 #[no_mangle]
 pub extern "C" fn happy_eyeballs_process_dns_response_aaaa(
-    he: &mut HappyEyeballs,
+    he: *mut HappyEyeballs,
     id: u64,
-    addrs: &ThinVec<NetAddr>,
+    addrs: *const ThinVec<NetAddr>,
 ) -> nsresult {
+    let Some(he) = (unsafe { he.as_mut() }) else {
+        debug_assert!(false, "unexpected null he pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    let Some(addrs) = (unsafe { addrs.as_ref() }) else {
+        debug_assert!(false, "unexpected null addrs pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
     he.process_dns_response_aaaa(id, addrs)
 }
 
 #[no_mangle]
 pub extern "C" fn happy_eyeballs_process_dns_response_https(
-    he: &mut HappyEyeballs,
+    he: *mut HappyEyeballs,
     id: u64,
-    service_infos: &ThinVec<ServiceInfoFFI>,
+    service_infos: *const ThinVec<ServiceInfoFFI>,
 ) -> nsresult {
+    let Some(he) = (unsafe { he.as_mut() }) else {
+        debug_assert!(false, "unexpected null he pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    let Some(service_infos) = (unsafe { service_infos.as_ref() }) else {
+        debug_assert!(false, "unexpected null service_infos pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
     he.process_dns_response_https(id, service_infos)
 }
 
 #[no_mangle]
 pub extern "C" fn happy_eyeballs_process_connection_result(
-    he: &mut HappyEyeballs,
+    he: *mut HappyEyeballs,
     id: u64,
     status: nsresult,
 ) -> nsresult {
+    let Some(he) = (unsafe { he.as_mut() }) else {
+        debug_assert!(false, "unexpected null he pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
     he.process_connection_result(id, status)
 }
 
 #[no_mangle]
 pub extern "C" fn happy_eyeballs_process_output(
-    he: &mut HappyEyeballs,
-    ret_event: &mut Output,
-    data: &mut ThinVec<u8>,
+    he: *mut HappyEyeballs,
+    ret_event: *mut Output,
+    data: *mut ThinVec<u8>,
 ) -> nsresult {
+    let Some(he) = (unsafe { he.as_mut() }) else {
+        debug_assert!(false, "unexpected null he pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    let Some(ret_event) = (unsafe { ret_event.as_mut() }) else {
+        debug_assert!(false, "unexpected null ret_event pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
+    let Some(data) = (unsafe { data.as_mut() }) else {
+        debug_assert!(false, "unexpected null data pointer");
+        return NS_ERROR_INVALID_ARG;
+    };
+
     he.process_output(ret_event, data)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn happy_eyeballs_release(happy_eyeballs: &HappyEyeballs) {
+pub unsafe extern "C" fn happy_eyeballs_release(happy_eyeballs: *const HappyEyeballs) {
+    let Some(happy_eyeballs) = (unsafe { happy_eyeballs.as_ref() }) else {
+        debug_assert!(false, "unexpected null happy_eyeballs pointer");
+        return;
+    };
+
     let rc = happy_eyeballs.refcnt.dec();
     if rc == 0 {
         drop(Box::from_raw(ptr::from_ref(happy_eyeballs).cast_mut()));
@@ -456,7 +517,12 @@ pub unsafe extern "C" fn happy_eyeballs_release(happy_eyeballs: &HappyEyeballs) 
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn happy_eyeballs_addref(happy_eyeballs: &HappyEyeballs) {
+pub unsafe extern "C" fn happy_eyeballs_addref(happy_eyeballs: *const HappyEyeballs) {
+    let Some(happy_eyeballs) = (unsafe { happy_eyeballs.as_ref() }) else {
+        debug_assert!(false, "unexpected null happy_eyeballs pointer");
+        return;
+    };
+
     happy_eyeballs.refcnt.inc();
 }
 
