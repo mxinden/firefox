@@ -1,6 +1,6 @@
 use nserror::{nsresult, NS_ERROR_INVALID_ARG, NS_ERROR_UNEXPECTED, NS_OK};
 use nsstring::{nsACString, nsCString};
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::ptr;
 use std::time::Instant;
 use thin_vec::ThinVec;
@@ -23,7 +23,6 @@ extern "C" {
     fn moz_netaddr_get_family(arg: *const NetAddr) -> u16;
     fn moz_netaddr_get_network_order_ip(arg: *const NetAddr) -> u32;
     fn moz_netaddr_get_ipv6(arg: *const NetAddr) -> *const u8;
-    fn moz_netaddr_get_network_order_port(arg: *const NetAddr) -> u16;
 }
 
 #[repr(C)]
@@ -33,22 +32,23 @@ pub struct HappyEyeballs {
 }
 
 impl HappyEyeballs {
-    fn process_dns_response_a(&mut self, id: u64, addrs: &ThinVec<NetAddr>) -> nsresult {
-        let mut out = Vec::with_capacity(addrs.len());
-        for na in addrs.iter() {
+    fn process_dns_response_a(&mut self, id: u64, net_addrs: &ThinVec<NetAddr>) -> nsresult {
+        let mut addrs = Vec::with_capacity(net_addrs.len());
+        for na in net_addrs.iter() {
             let family = i32::from(unsafe {
                 moz_netaddr_get_family((na as *const NetAddr).cast())
             });
             if family != AF_INET {
+                debug_assert!(false, "got {} instead of AF_INET in A record", family);
                 return NS_ERROR_UNEXPECTED;
             }
             let ip_be =
                 unsafe { moz_netaddr_get_network_order_ip((na as *const NetAddr).cast()) };
             let ipv4 = Ipv4Addr::from(u32::from_be(ip_be));
-            out.push(ipv4);
+            addrs.push(ipv4);
         }
 
-        let result = happy_eyeballs::DnsResult::A(Ok(out));
+        let result = happy_eyeballs::DnsResult::A(Ok(addrs));
         let input = happy_eyeballs::Input::DnsResult {
             id: id.into(),
             result,
@@ -58,23 +58,24 @@ impl HappyEyeballs {
         NS_OK
     }
 
-    fn process_dns_response_aaaa(&mut self, id: u64, addrs: &ThinVec<NetAddr>) -> nsresult {
-        let mut out = Vec::with_capacity(addrs.len());
-        for na in addrs.iter() {
+    fn process_dns_response_aaaa(&mut self, id: u64, net_addrs: &ThinVec<NetAddr>) -> nsresult {
+        let mut addrs = Vec::with_capacity(net_addrs.len());
+        for na in net_addrs.iter() {
             let family = i32::from(unsafe {
                 moz_netaddr_get_family((na as *const NetAddr).cast())
             });
             if family != AF_INET6 {
+                debug_assert!(false, "got {} instead of AF_INET6 in AAAA record", family);
                 return NS_ERROR_UNEXPECTED;
             }
             let p = unsafe { moz_netaddr_get_ipv6((na as *const NetAddr).cast()) };
             let octs: [u8; 16] =
                 unsafe { std::slice::from_raw_parts(p, 16).try_into().unwrap() };
             let ipv6 = Ipv6Addr::from(octs);
-            out.push(ipv6);
+            addrs.push(ipv6);
         }
 
-        let result = happy_eyeballs::DnsResult::Aaaa(Ok(out));
+        let result = happy_eyeballs::DnsResult::Aaaa(Ok(addrs));
         let input = happy_eyeballs::Input::DnsResult {
             id: id.into(),
             result,
@@ -89,7 +90,7 @@ impl HappyEyeballs {
         id: u64,
         service_infos: &ThinVec<ServiceInfoFFI>,
     ) -> nsresult {
-        let mut parsed_infos = Vec::new();
+        let mut infos = Vec::new();
 
         for svc_info in service_infos {
                 let target_str = svc_info.target_name.to_utf8();
@@ -142,7 +143,7 @@ impl HappyEyeballs {
                     ipv6_vec.push(ipv6);
                 }
 
-                parsed_infos.push(happy_eyeballs::ServiceInfo {
+                infos.push(happy_eyeballs::ServiceInfo {
                     priority: svc_info.priority,
                     target_name: target,
                     alpn_protocols: alpn_set,
@@ -152,7 +153,7 @@ impl HappyEyeballs {
                 });
         }
 
-        let result = happy_eyeballs::DnsResult::Https(Ok(parsed_infos));
+        let result = happy_eyeballs::DnsResult::Https(Ok(infos));
         let input = happy_eyeballs::Input::DnsResult {
             id: id.into(),
             result,
