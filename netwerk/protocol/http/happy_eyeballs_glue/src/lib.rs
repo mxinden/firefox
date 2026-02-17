@@ -146,7 +146,6 @@ pub extern "C" fn happy_eyeballs_process_connection_result(
 pub extern "C" fn happy_eyeballs_process_output(
     he: *mut HappyEyeballs,
     ret_event: *mut Output,
-    addr: *mut ThinVec<u8>,
     ech_config: *mut ThinVec<u8>,
 ) -> nsresult {
     let Some(he) = (unsafe { he.as_mut() }) else {
@@ -159,17 +158,12 @@ pub extern "C" fn happy_eyeballs_process_output(
         return NS_ERROR_INVALID_ARG;
     };
 
-    let Some(addr) = (unsafe { addr.as_mut() }) else {
-        debug_assert!(false, "unexpected null addr pointer");
-        return NS_ERROR_INVALID_ARG;
-    };
-
     let Some(ech_config) = (unsafe { ech_config.as_mut() }) else {
         debug_assert!(false, "unexpected null ech_config pointer");
         return NS_ERROR_INVALID_ARG;
     };
 
-    he.process_output(ret_event, addr, ech_config)
+    he.process_output(ret_event, ech_config)
 }
 
 #[repr(C)]
@@ -329,11 +323,9 @@ impl HappyEyeballs {
     fn process_output(
         &mut self,
         ret_event: &mut Output,
-        addr: &mut ThinVec<u8>,
         ech_config: &mut ThinVec<u8>,
     ) -> nsresult {
         let out = self.inner.process_output(std::time::Instant::now());
-        addr.clear();
         ech_config.clear();
         match out {
             Some(happy_eyeballs::Output::SendDnsQuery {
@@ -355,23 +347,19 @@ impl HappyEyeballs {
                 };
             }
             Some(happy_eyeballs::Output::AttemptConnection { id, endpoint }) => {
-                // TODO: Going through string best way?
-                let addr_str = endpoint.address.ip().to_string();
-                addr.extend_from_slice(addr_str.as_bytes());
                 if let Some(ref ech) = endpoint.ech_config {
                     ech_config.extend_from_slice(ech);
                 }
                 *ret_event = Output::AttemptConnection {
                     id: id.into(),
                     protocol: endpoint.protocol.into(),
+                    addr: endpoint.address.ip().into(),
                     port: endpoint.address.port(),
                 };
             }
             Some(happy_eyeballs::Output::CancelConnection(socket_addr)) => {
-                // TODO: Going through string best way?
-                let addr_str = socket_addr.ip().to_string();
-                addr.extend_from_slice(addr_str.as_bytes());
                 *ret_event = Output::CancelConnection {
+                    addr: socket_addr.ip().into(),
                     port: socket_addr.port(),
                 };
             }
@@ -492,11 +480,26 @@ pub struct ServiceInfoFFI {
 }
 
 #[repr(C)]
+pub enum IpAddr {
+    V4([u8; 4]),
+    V6([u8; 16]),
+}
+
+impl From<std::net::IpAddr> for IpAddr {
+    fn from(ip: std::net::IpAddr) -> Self {
+        match ip {
+            std::net::IpAddr::V4(ipv4) => IpAddr::V4(ipv4.octets()),
+            std::net::IpAddr::V6(ipv6) => IpAddr::V6(ipv6.octets()),
+        }
+    }
+}
+
+#[repr(C)]
 pub enum Output {
     SendDnsQuery { id: u64, record_type: DnsRecordType },
     Timer { duration_ms: u64 },
-    AttemptConnection { id: u64, protocol: ConnectionAttemptProtocols, port: u16 },
-    CancelConnection { port: u16 },
+    AttemptConnection { id: u64, protocol: ConnectionAttemptProtocols, addr: IpAddr, port: u16 },
+    CancelConnection { addr: IpAddr, port: u16 },
     Succeeded,
     Failed,
     None,

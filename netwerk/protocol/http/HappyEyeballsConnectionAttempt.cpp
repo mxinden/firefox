@@ -71,19 +71,26 @@ nsresult HappyEyeballsConnectionAttempt::Init(ConnectionEntry* ent) {
   return ProcessHappyEyeballsOutput();
 }
 
-static Result<NetAddr, nsresult> ToNetAddr(const nsTArray<uint8_t>& aData,
+static Result<NetAddr, nsresult> ToNetAddr(const IpAddr& aIpAddr,
                                            uint16_t aPort) {
   NetAddr addr;
-  if (NS_FAILED(addr.InitFromString(nsDependentCSubstring(
-          reinterpret_cast<const char*>(aData.Elements()), aData.Length())))) {
-    return Err(NS_ERROR_UNEXPECTED);
-  }
+  memset(&addr, 0, sizeof(NetAddr));
 
   uint16_t port = htons(aPort);
-  if (addr.raw.family == AF_INET) {
-    addr.inet.port = port;
-  } else if (addr.raw.family == AF_INET6) {
-    addr.inet6.port = port;
+
+  switch (aIpAddr.tag) {
+    case IpAddr::Tag::V4:
+      addr.inet.family = AF_INET;
+      addr.inet.port = port;
+      memcpy(&addr.inet.ip, aIpAddr.v4._0, 4);
+      break;
+    case IpAddr::Tag::V6:
+      addr.inet6.family = AF_INET6;
+      addr.inet6.port = port;
+      memcpy(&addr.inet6.ip, aIpAddr.v6._0, 16);
+      break;
+    default:
+      return Err(NS_ERROR_UNEXPECTED);
   }
 
   return addr;
@@ -156,10 +163,9 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
 
   while (true) {
     HappyEyeballsEvent event{};
-    nsTArray<uint8_t> addr;
     nsTArray<uint8_t> echConfig;
     rv = happy_eyeballs_process_output(
-        const_cast<HappyEyeballs*>(mHappyEyeballs), &event, &addr, &echConfig);
+        const_cast<HappyEyeballs*>(mHappyEyeballs), &event, &echConfig);
     if (NS_FAILED(rv)) {
       LOG(("process_output failed rv=%x", static_cast<uint32_t>(rv)));
       return rv;
@@ -190,7 +196,7 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
             ("HappyEyeballsEvent::Tag::AttemptConnection protocol=%d port=%d",
              event.attempt_connection.protocol, event.attempt_connection.port));
 
-        auto res = ToNetAddr(addr, event.attempt_connection.port);
+        auto res = ToNetAddr(event.attempt_connection.addr, event.attempt_connection.port);
         if (res.isErr()) {
           LOG(("Failed to convert to NetAddr"));
           // TODO: how to handle this error?
@@ -210,7 +216,7 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
       }
 
       case HappyEyeballsEvent::Tag::CancelConnection: {
-        auto res = ToNetAddr(addr, event.cancel_connection.port);
+        auto res = ToNetAddr(event.cancel_connection.addr, event.cancel_connection.port);
         if (res.isErr()) {
           LOG(("Failed to convert to NetAddr"));
           // TODO: how to handle this error?
