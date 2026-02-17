@@ -93,8 +93,10 @@ nsresult HappyEyeballsConnectionAttempt::ProcessDnsResponseA(
     const nsACString& aHost, const nsTArray<NetAddr>& aAddresses) {
   LOG(("HappyEyeballsConnectionAttempt::ProcessDnsResponseA %p", this));
 
+  MOZ_CRASH("TODO: Track and pass the actual ID from SendDnsQuery output");
+  uint64_t id = 0;
   nsresult rv = happy_eyeballs_process_dns_response_a(
-      const_cast<HappyEyeballs*>(mHappyEyeballs), &aHost, &aAddresses);
+      const_cast<HappyEyeballs*>(mHappyEyeballs), id, &aAddresses);
   if (NS_FAILED(rv)) {
     LOG(("process_dns_response_a failed rv=%x", static_cast<uint32_t>(rv)));
   }
@@ -105,8 +107,10 @@ nsresult HappyEyeballsConnectionAttempt::ProcessDnsResponseAAAA(
     const nsACString& aHost, const nsTArray<NetAddr>& aAddresses) {
   LOG(("HappyEyeballsConnectionAttempt::ProcessDnsResponseAAAA %p", this));
 
+  MOZ_CRASH("TODO: Track and pass the actual ID from SendDnsQuery output");
+  uint64_t id = 0;
   nsresult rv = happy_eyeballs_process_dns_response_aaaa(
-      const_cast<HappyEyeballs*>(mHappyEyeballs), &aHost, &aAddresses);
+      const_cast<HappyEyeballs*>(mHappyEyeballs), id, &aAddresses);
   if (NS_FAILED(rv)) {
     LOG(("process_dns_response_aaaa failed rv=%x", static_cast<uint32_t>(rv)));
   }
@@ -117,8 +121,10 @@ nsresult HappyEyeballsConnectionAttempt::ProcessDnsResponseHTTPS(
     const nsACString& aHost, const nsTArray<ServiceInfoFFI>& aServiceInfos) {
   LOG(("HappyEyeballsConnectionAttempt::ProcessDnsResponseHTTPS %p", this));
 
+  MOZ_CRASH("TODO: Track and pass the actual ID from SendDnsQuery output");
+  uint64_t id = 0;
   nsresult rv = happy_eyeballs_process_dns_response_https(
-      const_cast<HappyEyeballs*>(mHappyEyeballs), &aHost, &aServiceInfos);
+      const_cast<HappyEyeballs*>(mHappyEyeballs), id, &aServiceInfos);
   if (NS_FAILED(rv)) {
     LOG(("process_dns_response_https failed rv=%x", static_cast<uint32_t>(rv)));
   }
@@ -129,8 +135,10 @@ nsresult HappyEyeballsConnectionAttempt::ProcessConnectionResult(
     const NetAddr& aAddr, nsresult aStatus) {
   LOG(("HappyEyeballsConnectionAttempt::ProcessConnectionResult %p", this));
 
+  MOZ_CRASH("TODO: Track and pass the actual ID from AttemptConnection output");
+  uint64_t id = 0;
   nsresult rv = happy_eyeballs_process_connection_result(
-      const_cast<HappyEyeballs*>(mHappyEyeballs), &aAddr, aStatus);
+      const_cast<HappyEyeballs*>(mHappyEyeballs), id, aStatus);
   if (NS_FAILED(rv)) {
     LOG(("process_connection_result failed rv=%x", static_cast<uint32_t>(rv)));
   }
@@ -148,9 +156,10 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
 
   while (true) {
     HappyEyeballsEvent event{};
-    nsTArray<uint8_t> heData;
+    nsTArray<uint8_t> addr;
+    nsTArray<uint8_t> echConfig;
     rv = happy_eyeballs_process_output(
-        const_cast<HappyEyeballs*>(mHappyEyeballs), &event, &heData);
+        const_cast<HappyEyeballs*>(mHappyEyeballs), &event, &addr, &echConfig);
     if (NS_FAILED(rv)) {
       LOG(("process_output failed rv=%x", static_cast<uint32_t>(rv)));
       return rv;
@@ -178,32 +187,19 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
 
       case HappyEyeballsEvent::Tag::AttemptConnection: {
         LOG(
-            ("HappyEyeballsEvent::Tag::AttemptConnection protocol=%d port=%d "
-             "addr_len=%u ech_config_len=%u",
-             event.attempt_connection.protocol, event.attempt_connection.port,
-             event.attempt_connection.addr_len,
-             event.attempt_connection.ech_config_len));
+            ("HappyEyeballsEvent::Tag::AttemptConnection protocol=%d port=%d",
+             event.attempt_connection.protocol, event.attempt_connection.port));
 
-        nsTArray<uint8_t> addrData;
-        addrData.AppendElements(heData.Elements(),
-                                event.attempt_connection.addr_len);
-        auto res = ToNetAddr(addrData, event.attempt_connection.port);
+        auto res = ToNetAddr(addr, event.attempt_connection.port);
         if (res.isErr()) {
           LOG(("Failed to convert to NetAddr"));
           // TODO: how to handle this error?
           return res.unwrapErr();
         }
 
-        nsTArray<uint8_t> echConfig;
-        if (event.attempt_connection.ech_config_len > 0) {
-          echConfig.AppendElements(
-              heData.Elements() + event.attempt_connection.addr_len,
-              event.attempt_connection.ech_config_len);
-        }
-
         LOG(("connect to:[%s] ech_config_len=%zu",
              res.unwrap().ToString().get(), echConfig.Length()));
-        if (event.attempt_connection.protocol == ProtocolCombination::H3) {
+        if (event.attempt_connection.protocol == ConnectionAttemptProtocols::H3) {
           EstablishUDPConnection(res.unwrap(), event.attempt_connection.port,
                                  std::move(echConfig));
         } else {
@@ -214,7 +210,7 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
       }
 
       case HappyEyeballsEvent::Tag::CancelConnection: {
-        auto res = ToNetAddr(heData, event.attempt_connection.port);
+        auto res = ToNetAddr(addr, event.cancel_connection.port);
         if (res.isErr()) {
           LOG(("Failed to convert to NetAddr"));
           // TODO: how to handle this error?
@@ -424,10 +420,10 @@ void HappyEyeballsConnectionAttempt::HandleTCPConnectionResult(
 nsresult HappyEyeballsConnectionAttempt::EstablishTCPConnection(
     NetAddr aAddr, uint16_t aPort, nsTArray<uint8_t>&& aEchConfig) {
   NetAddrKey key(aAddr);
-  // TODO: we always use ProtocolCombination::H2OrH1 for now. Do we really want
+  // TODO: we always use ConnectionAttemptProtocols::H2OrH1 for now. Do we really want
   // to race H2 and H1?
   RefPtr<nsHttpConnectionInfo> info =
-      mConnInfo->CloneAndAdoptPortAndAlpn(aPort, ProtocolCombination::H2OrH1);
+      mConnInfo->CloneAndAdoptPortAndAlpn(aPort, ConnectionAttemptProtocols::H2OrH1);
   if (!aEchConfig.IsEmpty()) {
     info->SetEchConfig(
         nsCString((const char*)aEchConfig.Elements(), aEchConfig.Length()));
@@ -452,7 +448,7 @@ nsresult HappyEyeballsConnectionAttempt::EstablishUDPConnection(
     NetAddr aAddr, uint16_t aPort, nsTArray<uint8_t>&& aEchConfig) {
   NetAddrKey key(aAddr);
   RefPtr<nsHttpConnectionInfo> info =
-      mConnInfo->CloneAndAdoptPortAndAlpn(aPort, ProtocolCombination::H3);
+      mConnInfo->CloneAndAdoptPortAndAlpn(aPort, ConnectionAttemptProtocols::H3);
   if (!aEchConfig.IsEmpty()) {
     info->SetEchConfig(
         nsCString((const char*)aEchConfig.Elements(), aEchConfig.Length()));
