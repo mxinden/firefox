@@ -16,7 +16,7 @@ use winapi::{
 };
 
 #[no_mangle]
-pub extern "C" fn happy_eyeballs_new(
+pub extern "C" fn create(
     result: &mut *const HappyEyeballs,
     origin: *const nsACString,
     port: u16,
@@ -72,7 +72,7 @@ pub extern "C" fn happy_eyeballs_new(
 }
 
 #[no_mangle]
-pub extern "C" fn happy_eyeballs_process_dns_response_a(
+pub extern "C" fn process_dns_response_a(
     he: *mut HappyEyeballs,
     id: u64,
     addrs: *const ThinVec<NetAddr>,
@@ -91,7 +91,7 @@ pub extern "C" fn happy_eyeballs_process_dns_response_a(
 }
 
 #[no_mangle]
-pub extern "C" fn happy_eyeballs_process_dns_response_aaaa(
+pub extern "C" fn process_dns_response_aaaa(
     he: *mut HappyEyeballs,
     id: u64,
     addrs: *const ThinVec<NetAddr>,
@@ -110,10 +110,10 @@ pub extern "C" fn happy_eyeballs_process_dns_response_aaaa(
 }
 
 #[no_mangle]
-pub extern "C" fn happy_eyeballs_process_dns_response_https(
+pub extern "C" fn process_dns_response_https(
     he: *mut HappyEyeballs,
     id: u64,
-    service_infos: *const ThinVec<ServiceInfoFFI>,
+    service_infos: *const ThinVec<ServiceInfo>,
 ) -> nsresult {
     let Some(he) = (unsafe { he.as_mut() }) else {
         debug_assert!(false, "unexpected null he pointer");
@@ -129,7 +129,7 @@ pub extern "C" fn happy_eyeballs_process_dns_response_https(
 }
 
 #[no_mangle]
-pub extern "C" fn happy_eyeballs_process_connection_result(
+pub extern "C" fn process_connection_result(
     he: *mut HappyEyeballs,
     id: u64,
     status: nsresult,
@@ -143,7 +143,7 @@ pub extern "C" fn happy_eyeballs_process_connection_result(
 }
 
 #[no_mangle]
-pub extern "C" fn happy_eyeballs_process_output(
+pub extern "C" fn process_output(
     he: *mut HappyEyeballs,
     ret_event: *mut Output,
     ech_config: *mut ThinVec<u8>,
@@ -229,7 +229,7 @@ impl HappyEyeballs {
     fn process_dns_response_https(
         &mut self,
         id: u64,
-        service_infos: &ThinVec<ServiceInfoFFI>,
+        service_infos: &ThinVec<ServiceInfo>,
     ) -> nsresult {
         let mut infos = Vec::new();
 
@@ -470,7 +470,7 @@ impl From<happy_eyeballs::Protocol> for ConnectionAttemptProtocols {
 }
 
 #[repr(C)]
-pub struct ServiceInfoFFI {
+pub struct ServiceInfo {
     pub priority: u16,
     pub target_name: nsCString,
     pub alpn_protocols: ThinVec<Protocol>,
@@ -506,7 +506,7 @@ pub enum Output {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn happy_eyeballs_release(happy_eyeballs: *const HappyEyeballs) {
+pub unsafe extern "C" fn release(happy_eyeballs: *const HappyEyeballs) {
     let Some(happy_eyeballs) = (unsafe { happy_eyeballs.as_ref() }) else {
         debug_assert!(false, "unexpected null happy_eyeballs pointer");
         return;
@@ -519,7 +519,7 @@ pub unsafe extern "C" fn happy_eyeballs_release(happy_eyeballs: *const HappyEyeb
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn happy_eyeballs_addref(happy_eyeballs: *const HappyEyeballs) {
+pub unsafe extern "C" fn addref(happy_eyeballs: *const HappyEyeballs) {
     let Some(happy_eyeballs) = (unsafe { happy_eyeballs.as_ref() }) else {
         debug_assert!(false, "unexpected null happy_eyeballs pointer");
         return;
@@ -531,10 +531,10 @@ pub unsafe extern "C" fn happy_eyeballs_addref(happy_eyeballs: *const HappyEyeba
 // xpcom::RefPtr support
 unsafe impl RefCounted for HappyEyeballs {
     unsafe fn addref(&self) {
-        happy_eyeballs_addref(self);
+        addref(self);
     }
     unsafe fn release(&self) {
-        happy_eyeballs_release(self);
+        release(self);
     }
 }
 

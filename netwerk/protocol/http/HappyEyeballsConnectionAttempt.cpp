@@ -34,24 +34,24 @@ HappyEyeballsConnectionAttempt::HappyEyeballsConnectionAttempt(
   LOG(("HappyEyeballsConnectionAttempt ctor %p", this));
   if (mConnInfo->GetRoutedHost().IsEmpty()) {
     mHost = mConnInfo->GetOrigin();
-    nsTArray<AltSvc> emptyAltSvc;
-    (void)happy_eyeballs_new(&mHappyEyeballs, &mHost,
+    nsTArray<happy_eyeballs::AltSvc> emptyAltSvc;
+    (void)happy_eyeballs::create(&mHappyEyeballs, &mHost,
                              static_cast<uint16_t>(mConnInfo->OriginPort()),
                              &emptyAltSvc);
   } else {
     mHost = mConnInfo->GetRoutedHost();
     if (mConnInfo->IsHttp3()) {
       LOG(("HappyEyeballsConnectionAttempt for HTTP/3"));
-      nsTArray<AltSvc> altSvcArray;
-      AltSvc altsvc{};
-      altsvc.protocol = Protocol::H3;
+      nsTArray<happy_eyeballs::AltSvc> altSvcArray;
+      happy_eyeballs::AltSvc altsvc{};
+      altsvc.protocol = happy_eyeballs::Protocol::H3;
       altSvcArray.AppendElement(altsvc);
-      (void)happy_eyeballs_new(&mHappyEyeballs, &mHost,
+      (void)happy_eyeballs::create(&mHappyEyeballs, &mHost,
                                static_cast<uint16_t>(mConnInfo->RoutedPort()),
                                &altSvcArray);
     } else {
-      nsTArray<AltSvc> emptyAltSvc;
-      (void)happy_eyeballs_new(&mHappyEyeballs, &mHost,
+      nsTArray<happy_eyeballs::AltSvc> emptyAltSvc;
+      (void)happy_eyeballs::create(&mHappyEyeballs, &mHost,
                                static_cast<uint16_t>(mConnInfo->RoutedPort()),
                                &emptyAltSvc);
     }
@@ -61,7 +61,7 @@ HappyEyeballsConnectionAttempt::HappyEyeballsConnectionAttempt(
 HappyEyeballsConnectionAttempt::~HappyEyeballsConnectionAttempt() {
   LOG(("HappyEyeballsConnectionAttempt dtor %p", this));
   if (mHappyEyeballs) {
-    happy_eyeballs_release(mHappyEyeballs);
+    happy_eyeballs::release(mHappyEyeballs);
     mHappyEyeballs = nullptr;
   }
 }
@@ -71,7 +71,7 @@ nsresult HappyEyeballsConnectionAttempt::Init(ConnectionEntry* ent) {
   return ProcessHappyEyeballsOutput();
 }
 
-static Result<NetAddr, nsresult> ToNetAddr(const IpAddr& aIpAddr,
+static Result<NetAddr, nsresult> ToNetAddr(const happy_eyeballs::IpAddr& aIpAddr,
                                            uint16_t aPort) {
   NetAddr addr;
   memset(&addr, 0, sizeof(NetAddr));
@@ -79,12 +79,12 @@ static Result<NetAddr, nsresult> ToNetAddr(const IpAddr& aIpAddr,
   uint16_t port = htons(aPort);
 
   switch (aIpAddr.tag) {
-    case IpAddr::Tag::V4:
+    case happy_eyeballs::IpAddr::Tag::V4:
       addr.inet.family = AF_INET;
       addr.inet.port = port;
       memcpy(&addr.inet.ip, aIpAddr.v4._0, 4);
       break;
-    case IpAddr::Tag::V6:
+    case happy_eyeballs::IpAddr::Tag::V6:
       addr.inet6.family = AF_INET6;
       addr.inet6.port = port;
       memcpy(&addr.inet6.ip, aIpAddr.v6._0, 16);
@@ -102,7 +102,7 @@ nsresult HappyEyeballsConnectionAttempt::ProcessDnsResponseA(
 
   MOZ_CRASH("TODO: Track and pass the actual ID from SendDnsQuery output");
   uint64_t id = 0;
-  nsresult rv = happy_eyeballs_process_dns_response_a(
+  nsresult rv = happy_eyeballs::process_dns_response_a(
       const_cast<HappyEyeballs*>(mHappyEyeballs), id, &aAddresses);
   if (NS_FAILED(rv)) {
     LOG(("process_dns_response_a failed rv=%x", static_cast<uint32_t>(rv)));
@@ -116,7 +116,7 @@ nsresult HappyEyeballsConnectionAttempt::ProcessDnsResponseAAAA(
 
   MOZ_CRASH("TODO: Track and pass the actual ID from SendDnsQuery output");
   uint64_t id = 0;
-  nsresult rv = happy_eyeballs_process_dns_response_aaaa(
+  nsresult rv = happy_eyeballs::process_dns_response_aaaa(
       const_cast<HappyEyeballs*>(mHappyEyeballs), id, &aAddresses);
   if (NS_FAILED(rv)) {
     LOG(("process_dns_response_aaaa failed rv=%x", static_cast<uint32_t>(rv)));
@@ -125,12 +125,12 @@ nsresult HappyEyeballsConnectionAttempt::ProcessDnsResponseAAAA(
 }
 
 nsresult HappyEyeballsConnectionAttempt::ProcessDnsResponseHTTPS(
-    const nsACString& aHost, const nsTArray<ServiceInfoFFI>& aServiceInfos) {
+    const nsACString& aHost, const nsTArray<happy_eyeballs::ServiceInfo>& aServiceInfos) {
   LOG(("HappyEyeballsConnectionAttempt::ProcessDnsResponseHTTPS %p", this));
 
   MOZ_CRASH("TODO: Track and pass the actual ID from SendDnsQuery output");
   uint64_t id = 0;
-  nsresult rv = happy_eyeballs_process_dns_response_https(
+  nsresult rv = happy_eyeballs::process_dns_response_https(
       const_cast<HappyEyeballs*>(mHappyEyeballs), id, &aServiceInfos);
   if (NS_FAILED(rv)) {
     LOG(("process_dns_response_https failed rv=%x", static_cast<uint32_t>(rv)));
@@ -144,7 +144,7 @@ nsresult HappyEyeballsConnectionAttempt::ProcessConnectionResult(
 
   MOZ_CRASH("TODO: Track and pass the actual ID from AttemptConnection output");
   uint64_t id = 0;
-  nsresult rv = happy_eyeballs_process_connection_result(
+  nsresult rv = happy_eyeballs::process_connection_result(
       const_cast<HappyEyeballs*>(mHappyEyeballs), id, aStatus);
   if (NS_FAILED(rv)) {
     LOG(("process_connection_result failed rv=%x", static_cast<uint32_t>(rv)));
@@ -162,9 +162,9 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
   nsresult rv = NS_OK;
 
   while (true) {
-    HappyEyeballsEvent event{};
+    happy_eyeballs::Output event{};
     nsTArray<uint8_t> echConfig;
-    rv = happy_eyeballs_process_output(
+    rv = happy_eyeballs::process_output(
         const_cast<HappyEyeballs*>(mHappyEyeballs), &event, &echConfig);
     if (NS_FAILED(rv)) {
       LOG(("process_output failed rv=%x", static_cast<uint32_t>(rv)));
@@ -173,8 +173,8 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
 
     LOG(("event.tag=%d", event.tag));
     switch (event.tag) {
-      case HappyEyeballsEvent::Tag::SendDnsQuery: {
-        LOG(("HappyEyeballsEvent::Tag::SendDnsQuery"));
+      case happy_eyeballs::Output::Tag::SendDnsQuery: {
+        LOG(("happy_eyeballs::Output::Tag::SendDnsQuery"));
         auto dnsFlags = SetupDnsFlags(event.send_dns_query.record_type);
         if (dnsFlags.isOk()) {
           rv = DNSLookup(event.send_dns_query.record_type, dnsFlags.unwrap());
@@ -186,14 +186,14 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
         break;
       }
 
-      case HappyEyeballsEvent::Tag::Timer: {
+      case happy_eyeballs::Output::Tag::Timer: {
         SetupTimer(event.timer.duration_ms);
         return NS_OK;
       }
 
-      case HappyEyeballsEvent::Tag::AttemptConnection: {
+      case happy_eyeballs::Output::Tag::AttemptConnection: {
         LOG(
-            ("HappyEyeballsEvent::Tag::AttemptConnection protocol=%d port=%d",
+            ("happy_eyeballs::Output::Tag::AttemptConnection protocol=%d port=%d",
              event.attempt_connection.protocol, event.attempt_connection.port));
 
         auto res = ToNetAddr(event.attempt_connection.addr, event.attempt_connection.port);
@@ -205,7 +205,7 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
 
         LOG(("connect to:[%s] ech_config_len=%zu",
              res.unwrap().ToString().get(), echConfig.Length()));
-        if (event.attempt_connection.protocol == ConnectionAttemptProtocols::H3) {
+        if (event.attempt_connection.protocol == happy_eyeballs::ConnectionAttemptProtocols::H3) {
           EstablishUDPConnection(res.unwrap(), event.attempt_connection.port,
                                  std::move(echConfig));
         } else {
@@ -215,7 +215,7 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
         break;
       }
 
-      case HappyEyeballsEvent::Tag::CancelConnection: {
+      case happy_eyeballs::Output::Tag::CancelConnection: {
         auto res = ToNetAddr(event.cancel_connection.addr, event.cancel_connection.port);
         if (res.isErr()) {
           LOG(("Failed to convert to NetAddr"));
@@ -228,18 +228,18 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
         break;
       }
 
-      case HappyEyeballsEvent::Tag::Succeeded:
-        LOG(("HappyEyeballsEvent::Tag::Succeeded"));
+      case happy_eyeballs::Output::Tag::Succeeded:
+        LOG(("happy_eyeballs::Output::Tag::Succeeded"));
         OnSucceeded();
         return NS_OK;
 
-      case HappyEyeballsEvent::Tag::Failed:
-        LOG(("HappyEyeballsEvent::Tag::Failed"));
+      case happy_eyeballs::Output::Tag::Failed:
+        LOG(("happy_eyeballs::Output::Tag::Failed"));
         Abandon();
         return NS_ERROR_CONNECTION_REFUSED;
 
-      case HappyEyeballsEvent::Tag::None:
-        LOG(("HappyEyeballsEvent::Tag::None"));
+      case happy_eyeballs::Output::Tag::None:
+        LOG(("happy_eyeballs::Output::Tag::None"));
         // No more events to process
         return NS_OK;
     }
@@ -249,7 +249,7 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
 }
 
 Result<nsIDNSService::DNSFlags, nsresult>
-HappyEyeballsConnectionAttempt::SetupDnsFlags(DnsRecordType aType) {
+HappyEyeballsConnectionAttempt::SetupDnsFlags(happy_eyeballs::DnsRecordType aType) {
   LOG(("HappyEyeballsConnectionAttempt::SetupDnsFlags [this=%p aType=%d] ",
        this, aType));
 
@@ -260,16 +260,16 @@ HappyEyeballsConnectionAttempt::SetupDnsFlags(DnsRecordType aType) {
   }
 
   switch (aType) {
-    case DnsRecordType::Https:
+    case happy_eyeballs::DnsRecordType::Https:
       dnsFlags |= nsIDNSService::GetFlagsFromTRRMode(mConnInfo->GetTRRMode());
       return dnsFlags;
-    case DnsRecordType::Aaaa:
+    case happy_eyeballs::DnsRecordType::Aaaa:
       if (mCaps & NS_HTTP_DISABLE_IPV6) {
         return Err(NS_ERROR_NOT_AVAILABLE);
       }
       dnsFlags |= nsIDNSService::RESOLVE_DISABLE_IPV4;
       break;
-    case DnsRecordType::A:
+    case happy_eyeballs::DnsRecordType::A:
       if (mCaps & NS_HTTP_DISABLE_IPV4) {
         return Err(NS_ERROR_NOT_AVAILABLE);
       }
@@ -326,7 +326,7 @@ HappyEyeballsConnectionAttempt::SetupDnsFlags(DnsRecordType aType) {
 }
 
 nsresult HappyEyeballsConnectionAttempt::DNSLookup(
-    DnsRecordType aType, nsIDNSService::DNSFlags aFlags) {
+    happy_eyeballs::DnsRecordType aType, nsIDNSService::DNSFlags aFlags) {
   nsCOMPtr<nsIDNSService> dns = GetOrInitDNSService();
   if (!dns) {
     return NS_ERROR_UNEXPECTED;
@@ -334,7 +334,7 @@ nsresult HappyEyeballsConnectionAttempt::DNSLookup(
 
   nsresult rv = NS_OK;
   switch (aType) {
-    case DnsRecordType::Https: {
+    case happy_eyeballs::DnsRecordType::Https: {
       if (mCaps & NS_HTTP_DISALLOW_HTTPS_RR) {
         rv = NS_ERROR_NOT_AVAILABLE;
       } else {
@@ -351,14 +351,14 @@ nsresult HappyEyeballsConnectionAttempt::DNSLookup(
       }
       break;
     }
-    case DnsRecordType::Aaaa:
+    case happy_eyeballs::DnsRecordType::Aaaa:
       rv = dns->AsyncResolveNative(
           mHost, nsIDNSService::RESOLVE_TYPE_DEFAULT,
           aFlags | nsIDNSService::RESOLVE_WANT_RECORD_ON_ERROR, nullptr, this,
           gSocketTransportService, mConnInfo->GetOriginAttributes(),
           getter_AddRefs(mAAAARequest));
       break;
-    case DnsRecordType::A:
+    case happy_eyeballs::DnsRecordType::A:
       rv = dns->AsyncResolveNative(
           mHost, nsIDNSService::RESOLVE_TYPE_DEFAULT,
           aFlags | nsIDNSService::RESOLVE_WANT_RECORD_ON_ERROR, nullptr, this,
@@ -373,13 +373,13 @@ nsresult HappyEyeballsConnectionAttempt::DNSLookup(
         "HappyEyeballsConnectionAttempt::DNSLookup",
         [self = RefPtr{this}, aType]() {
           switch (aType) {
-            case DnsRecordType::Https:
+            case happy_eyeballs::DnsRecordType::Https:
               (void)self->OnHTTPSRecord(nullptr, NS_ERROR_UNKNOWN_HOST);
               break;
-            case DnsRecordType::Aaaa:
+            case happy_eyeballs::DnsRecordType::Aaaa:
               (void)self->OnAAAARecord(nullptr, NS_ERROR_UNKNOWN_HOST);
               break;
-            case DnsRecordType::A:
+            case happy_eyeballs::DnsRecordType::A:
               (void)self->OnARecord(nullptr, NS_ERROR_UNKNOWN_HOST);
               break;
           }
@@ -429,7 +429,7 @@ nsresult HappyEyeballsConnectionAttempt::EstablishTCPConnection(
   // TODO: we always use ConnectionAttemptProtocols::H2OrH1 for now. Do we really want
   // to race H2 and H1?
   RefPtr<nsHttpConnectionInfo> info =
-      mConnInfo->CloneAndAdoptPortAndAlpn(aPort, ConnectionAttemptProtocols::H2OrH1);
+      mConnInfo->CloneAndAdoptPortAndAlpn(aPort, happy_eyeballs::ConnectionAttemptProtocols::H2OrH1);
   if (!aEchConfig.IsEmpty()) {
     info->SetEchConfig(
         nsCString((const char*)aEchConfig.Elements(), aEchConfig.Length()));
@@ -454,7 +454,7 @@ nsresult HappyEyeballsConnectionAttempt::EstablishUDPConnection(
     NetAddr aAddr, uint16_t aPort, nsTArray<uint8_t>&& aEchConfig) {
   NetAddrKey key(aAddr);
   RefPtr<nsHttpConnectionInfo> info =
-      mConnInfo->CloneAndAdoptPortAndAlpn(aPort, ConnectionAttemptProtocols::H3);
+      mConnInfo->CloneAndAdoptPortAndAlpn(aPort, happy_eyeballs::ConnectionAttemptProtocols::H3);
   if (!aEchConfig.IsEmpty()) {
     info->SetEchConfig(
         nsCString((const char*)aEchConfig.Elements(), aEchConfig.Length()));
@@ -796,15 +796,15 @@ nsresult HappyEyeballsConnectionAttempt::OnAAAARecord(nsIDNSRecord* aRecord,
 }
 
 // Helper function to convert ALPN string to Protocol enum
-static Maybe<Protocol> AlpnStringToProtocol(const nsACString& aAlpn) {
+static Maybe<happy_eyeballs::Protocol> AlpnStringToProtocol(const nsACString& aAlpn) {
   if (aAlpn.EqualsLiteral("h3")) {
-    return Some(Protocol::H3);
+    return Some(happy_eyeballs::Protocol::H3);
   }
   if (aAlpn.EqualsLiteral("h2")) {
-    return Some(Protocol::H2);
+    return Some(happy_eyeballs::Protocol::H2);
   }
   if (aAlpn.EqualsLiteral("http/1.1")) {
-    return Some(Protocol::H1);
+    return Some(happy_eyeballs::Protocol::H1);
   }
   // Unknown ALPN protocol
   return Nothing();
@@ -816,7 +816,7 @@ nsresult HappyEyeballsConnectionAttempt::OnHTTPSRecord(nsIDNSRecord* aRecord,
        static_cast<uint32_t>(status)));
   nsCOMPtr<nsIDNSHTTPSSVCRecord> record = do_QueryInterface(aRecord);
   if (!record || NS_FAILED(status)) {
-    nsTArray<ServiceInfoFFI> emptyArray;
+    nsTArray<happy_eyeballs::ServiceInfo> emptyArray;
     (void)ProcessDnsResponseHTTPS(mHost, emptyArray);
     return ProcessHappyEyeballsOutput();
   }
@@ -825,15 +825,15 @@ nsresult HappyEyeballsConnectionAttempt::OnHTTPSRecord(nsIDNSRecord* aRecord,
   // TODO: Handle aNoHttp2, aNoHttp3, and aCname.
   (void)record->GetRecords(svcbRecords);
   if (svcbRecords.IsEmpty()) {
-    nsTArray<ServiceInfoFFI> emptyArray;
+    nsTArray<happy_eyeballs::ServiceInfo> emptyArray;
     (void)ProcessDnsResponseHTTPS(mHost, emptyArray);
     return ProcessHappyEyeballsOutput();
   }
 
-  nsTArray<ServiceInfoFFI> serviceInfos;
+  nsTArray<happy_eyeballs::ServiceInfo> serviceInfos;
 
   for (const auto& svcbRecord : svcbRecords) {
-    ServiceInfoFFI svcInfo;
+    happy_eyeballs::ServiceInfo svcInfo;
     (void)svcbRecord->GetPriority(&svcInfo.priority);
     (void)svcbRecord->GetName(svcInfo.target_name);
 

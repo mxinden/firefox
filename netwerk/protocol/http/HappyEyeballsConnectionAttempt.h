@@ -50,12 +50,12 @@ class HappyEyeballsConnectionAttempt final : public ConnectionAttempt,
   nsresult ProcessDnsResponseAAAA(const nsACString& aHost,
                                   const nsTArray<NetAddr>& aAddresses);
   nsresult ProcessDnsResponseHTTPS(
-      const nsACString& aHost, const nsTArray<ServiceInfoFFI>& aServiceInfos);
+      const nsACString& aHost, const nsTArray<happy_eyeballs::ServiceInfo>& aServiceInfos);
   nsresult ProcessConnectionResult(const NetAddr& aAddr, nsresult aStatus);
   nsresult ProcessHappyEyeballsOutput();
   // DNS lookups
-  Result<nsIDNSService::DNSFlags, nsresult> SetupDnsFlags(DnsRecordType aType);
-  nsresult DNSLookup(DnsRecordType aType, nsIDNSService::DNSFlags aFlags);
+  Result<nsIDNSService::DNSFlags, nsresult> SetupDnsFlags(happy_eyeballs::DnsRecordType aType);
+  nsresult DNSLookup(happy_eyeballs::DnsRecordType aType, nsIDNSService::DNSFlags aFlags);
 
   // DNS answers
   nsresult OnARecord(nsIDNSRecord* aRecord, nsresult status);

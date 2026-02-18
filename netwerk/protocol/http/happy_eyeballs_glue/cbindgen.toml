@@ -13,10 +13,8 @@ line_length = 100
 tab_width = 2
 language = "C++"
 includes = ["nsError.h", "nsString.h", "nsTArray.h"]
-namespaces = ["mozilla", "net"]
+namespaces = ["mozilla", "net", "happy_eyeballs"]
 
-# Wrap generated declarations in mozilla::net opened above and closed below.
-# No trailer; avoid closing braces outside include guards.
 trailer = ""
 
 [export]
@@ -25,5 +23,3 @@ item_types = ["globals", "enums", "structs", "unions", "typedefs", "opaque", "fu
 
 [export.rename]
 "ThinVec" = "nsTArray"
-"InputKind" = "HappyEyeballsInputKind"
-"Output" = "HappyEyeballsEvent"
