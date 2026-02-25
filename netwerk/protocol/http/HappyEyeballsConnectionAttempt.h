@@ -89,7 +89,7 @@ class HappyEyeballsConnectionAttempt final : public ConnectionAttempt,
   void HandleTCPConnectionResult(
       Result<RefPtr<HttpConnectionBase>, nsresult> aResult,
       TCPConnectionEstablisher* aEstablisher, uint64_t aId);
-  void CancelConnection(NetAddr aAddr);
+  void CancelConnection(uint64_t aId);
   nsresult EstablishUDPConnection(NetAddr aAddr, uint16_t aPort,
                                   nsTArray<uint8_t>&& aEchConfig, uint64_t aId);
   void HandleUDPConnectionResult(

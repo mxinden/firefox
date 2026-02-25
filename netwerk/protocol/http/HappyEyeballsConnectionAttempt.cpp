@@ -176,16 +176,8 @@ nsresult HappyEyeballsConnectionAttempt::ProcessHappyEyeballsOutput() {
       }
 
       case happy_eyeballs::Output::Tag::CancelConnection: {
-        auto res = ToNetAddr(event.cancel_connection.addr,
-                             event.cancel_connection.port);
-        if (res.isErr()) {
-          LOG(("Failed to convert to NetAddr"));
-          // TODO: how to handle this error?
-          return res.unwrapErr();
-        }
-
-        LOG(("CancelConnection:[%s]", res.unwrap().ToString().get()));
-        CancelConnection(res.unwrap());
+        LOG(("CancelConnection id=%" PRIu64, event.cancel_connection.id));
+        CancelConnection(event.cancel_connection.id);
         break;
       }
 
@@ -471,29 +463,15 @@ void HappyEyeballsConnectionAttempt::HandleUDPConnectionResult(
   ProcessConnectionResult(addr, NS_OK, aId);
 }
 
-void HappyEyeballsConnectionAttempt::CancelConnection(NetAddr aAddr) {
-  LOG(("HappyEyeballsConnectionAttempt::CancelConnection addr=[%s]",
-       aAddr.ToString().get()));
+void HappyEyeballsConnectionAttempt::CancelConnection(uint64_t aId) {
+  LOG(("HappyEyeballsConnectionAttempt::CancelConnection id=%" PRIu64, aId));
 
-  uint64_t foundId = 0;
-  ConnectionEstablisher* foundConn = nullptr;
-
-  for (auto iter = mConnectionEstablisherTable.Iter(); !iter.Done();
-       iter.Next()) {
-    ConnectionEstablisher* conn = iter.Data();
-    if (conn && conn->Addr() == aAddr) {
-      foundId = iter.Key();
-      foundConn = conn;
-      break;
-    }
-  }
-
-  if (foundConn) {
-    LOG(("Found connection with id=%" PRIu64 ", closing", foundId));
-    foundConn->Close(NS_ERROR_ABORT);
-    mConnectionEstablisherTable.Remove(foundId);
+  RefPtr<ConnectionEstablisher> conn = mConnectionEstablisherTable.Get(aId);
+  if (conn) {
+    conn->Close(NS_ERROR_ABORT);
+    mConnectionEstablisherTable.Remove(aId);
   } else {
-    LOG(("No matching connection found for addr=[%s]", aAddr.ToString().get()));
+    LOG(("No matching connection found for id=%" PRIu64, aId));
   }
 }
 
